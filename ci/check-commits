@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+set -euo pipefail
+source "$(dirname -- "${BASH_SOURCE[0]}")/common"
+# Existing released history predates adoption; validate every subsequent commit.
+from=${1:-16a7da26b3c2d67eb150634f0b6758fb5241b9c3}
+to=${2:-${COMMITLINT_HEAD:-HEAD}}
+if [[ $(git rev-parse --is-shallow-repository) == true ]]; then
+  echo 'Commit validation requires full Git history (checkout fetch-depth: 0).' >&2
+  exit 1
+fi
+git rev-parse --verify "${from}^{commit}" >/dev/null
+git rev-parse --verify "${to}^{commit}" >/dev/null
+if ! git merge-base --is-ancestor "$from" "$to"; then
+  echo 'Commitlint baseline is not an ancestor of the selected target.' >&2
+  exit 1
+fi
+npm ci --ignore-scripts --no-audit --no-fund
+# Includes explicit merges; PR callers select head.sha rather than synthetic merge HEAD.
+./node_modules/.bin/commitlint --from "$from" --to "$to" --strict --verbose

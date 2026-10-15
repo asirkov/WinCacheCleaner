@@ -16,6 +16,23 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  commits:
+    name: Check Conventional Commits
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Validate commit messages
+        shell: bash
+        env:
+          COMMITLINT_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: ./ci/check-commits
+
   validate:
     name: Validate (${{ matrix.os }}, ${{ matrix.engine }})
     runs-on: ${{ matrix.os }}
@@ -39,7 +56,7 @@ jobs:
 
   package:
     name: Build and test Windows CMD
-    needs: validate
+    needs: [commits, validate]
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     runs-on: windows-latest
     steps:
@@ -61,7 +78,7 @@ jobs:
 
   release:
     name: Publish versioned release
-    needs: [validate, package]
+    needs: [commits, validate, package]
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     permissions:
