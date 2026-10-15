@@ -9,9 +9,11 @@ through a pull request. Never push change commits directly to `develop` or `main
 Open feature PRs with `develop` as the base; use an English Conventional Commit
 title and describe behavior and validation. For an authorized release, promote
 in this order, using the manually invoked `$release` skill:
-version-bump PR -> `develop`, then `release-<VERSION>` -> PR into `main`
-(auto-merge), then `main` -> PR into `develop` (auto-merge). The version PR uses
+version-bump PR -> `develop` when its version is lower than the target, then
+`release-<VERSION>` -> PR into `main` (auto-merge), then `main` -> PR into `develop` (auto-merge). The version PR uses
 normal review; do not auto-merge it unless the user separately requests that.
+Skip this PR when develop already has the requested version, regardless of the
+PR that prepared it; stop if develop is higher. Keep README unversioned.
 Use merge commits and Conventional Commit subjects for release/sync ancestry.
 Never start the release skill implicitly or merely because a version is mentioned.
 Actions starts for pushes to `main`/`develop` and pull requests targeting `develop`.
