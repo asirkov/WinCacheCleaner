@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+set -euo pipefail
+source "$(dirname -- "${BASH_SOURCE[0]}")/common"
+# Ref/event guards are repeated here so an accidental workflow call cannot publish develop.
+if [[ ${GITHUB_REF:-} != refs/heads/main || ${GITHUB_EVENT_NAME:-} == pull_request ]]; then
+  echo 'Release publication is permitted only from main outside pull requests.' >&2
+  exit 1
+fi
+: "${GITHUB_REPOSITORY:?Missing GITHUB_REPOSITORY}"
+: "${GITHUB_SHA:?Missing GITHUB_SHA}"
+tag="v${version}"
+if git ls-remote --exit-code --tags origin "refs/tags/${tag}" >/dev/null; then
+  echo "${tag} already exists; bump VERSION and AppVersion for the next release."
+  exit 0
+else
+  status=$?
+  if [[ $status -ne 2 ]]; then exit "$status"; fi
+fi
+(cd dist && sha256sum --check SHA256SUMS.txt)
+gh release create "$tag" \
+  --repo "$GITHUB_REPOSITORY" \
+  --target "$GITHUB_SHA" \
+  --title "WinCacheCleaner ${tag}" \
+  --notes-file dist/RELEASE_NOTES.md \
+  dist/WinCacheCleaner.cmd dist/WinCacheCleaner.ps1 dist/SHA256SUMS.txt "dist/WinCacheCleaner-${tag}.zip"

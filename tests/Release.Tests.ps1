@@ -20,12 +20,12 @@ foreach ($line in Get-Content (Join-Path $OutputDirectory 'SHA256SUMS.txt')) {
     if ((Get-FileHash -LiteralPath (Join-Path $OutputDirectory $file) -Algorithm SHA256).Hash.ToLowerInvariant() -cne $expected) { throw "Checksum mismatch: $file" }
 }
 $notes = Get-Content (Join-Path $OutputDirectory 'RELEASE_NOTES.md') -Encoding UTF8 -Raw
-if ([string]::IsNullOrWhiteSpace($notes) -or $notes -match '(?m)^## ') { throw 'Release notes are empty or contain another version' }
+if ([string]::IsNullOrWhiteSpace($notes) -or $notes -notmatch ('(?m)^## .*v' + [regex]::Escape($version) + '$')) { throw 'Git release notes are empty or report the wrong version' }
 $archive = Join-Path $OutputDirectory "WinCacheCleaner-v$version.zip"
 $unpack = Join-Path ([IO.Path]::GetTempPath()) ('wcc-package-' + [guid]::NewGuid())
 try {
     Expand-Archive -LiteralPath $archive -DestinationPath $unpack
-    foreach ($file in @('WinCacheCleaner.cmd','WinCacheCleaner.ps1','README.md','LICENSE','CHANGELOG.md','VERSION','RELEASE_NOTES.md','SHA256SUMS.txt')) {
+    foreach ($file in @('WinCacheCleaner.cmd','WinCacheCleaner.ps1','README.md','LICENSE','VERSION','RELEASE_NOTES.md','SHA256SUMS.txt')) {
         if (-not (Test-Path -LiteralPath (Join-Path $unpack $file))) { throw "ZIP missing $file" }
     }
     if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) {
@@ -42,6 +42,8 @@ try {
             $failure = & $standalone -Unsupported 2>&1
         } finally { $ErrorActionPreference = $savedPreference }
         if ($LASTEXITCODE -eq 0) { throw 'Launcher accepted an unsupported switch' }
+        # The rejected switch is an expected failure. Do not let Actions inherit it.
+        $global:LASTEXITCODE = 0
         Write-Host 'PASS: real Windows CMD launch and invalid-switch exit status'
     } else {
         Write-Host 'Windows CMD execution unrun on this platform; covered by the main-branch Windows packaging job.'

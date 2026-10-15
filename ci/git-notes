@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# Write release notes from commit subjects after the latest ancestor release tag.
+set -euo pipefail
+source "$(dirname -- "${BASH_SOURCE[0]}")/common"
+if [[ $(git rev-parse --is-shallow-repository) == true ]]; then
+  echo 'Release notes require full Git history and tags (checkout fetch-depth: 0).' >&2
+  exit 1
+fi
+target=${RELEASE_COMMIT:-HEAD}
+git rev-parse --verify "${target}^{commit}" >/dev/null
+current_tag="v${version}"
+previous_tag=''
+tags=$(git tag --merged "$target" --list 'v*' --sort=-version:refname)
+while IFS= read -r tag; do
+  if [[ $tag != "$current_tag" && $tag =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+    previous_tag=$tag
+    break
+  fi
+done <<< "$tags"
+range=$target
+if [[ -n $previous_tag ]]; then range="${previous_tag}..${target}"; fi
+repo_url="${GITHUB_SERVER_URL:-https://github.com}/${GITHUB_REPOSITORY:-asirkov/WinCacheCleaner}"
+printf '## Зміни у %s\n\n' "$current_tag"
+commits=$(git log --no-merges --reverse --format="- %s ([%h](${repo_url}/commit/%H))" "$range")
+if [[ -n $commits ]]; then printf '%s\n' "$commits"; else printf 'Нових коммітів після попереднього релізу немає.\n'; fi
+if [[ -n $previous_tag ]]; then
+  printf '\n[Повний перелік змін](%s/compare/%s...%s)\n' "$repo_url" "$previous_tag" "$current_tag"
+else
+  printf '\n[Історія першого релізу](%s/commits/%s)\n' "$repo_url" "$current_tag"
+fi

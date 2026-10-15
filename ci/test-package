@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+set -euo pipefail
+source "$(dirname -- "${BASH_SOURCE[0]}")/common"
+require_powershell
+output_directory=${1:-"$repo_root/dist"}
+"$powershell_runner" -NoLogo -NoProfile -NonInteractive -File "$repo_root/tests/Release.Tests.ps1" -OutputDirectory "$output_directory"
+(cd -- "$output_directory" && sha256sum --check SHA256SUMS.txt)

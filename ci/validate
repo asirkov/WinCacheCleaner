@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+set -euo pipefail
+source "$(dirname -- "${BASH_SOURCE[0]}")/common"
+require_powershell
+export WCC_ROOT
+WCC_ROOT=$(native_path "$repo_root")
+powershell_code=$(cat <<'PS'
+try {
+    $ErrorActionPreference = 'Stop'
+    $tokens = $null
+    $errors = $null
+    $scriptPath = Join-Path $env:WCC_ROOT 'WinCacheCleaner.ps1'
+    [void][System.Management.Automation.Language.Parser]::ParseFile($scriptPath, [ref]$tokens, [ref]$errors)
+    if ($errors.Count) { throw ($errors | Out-String) }
+    $version = (Get-Content (Join-Path $env:WCC_ROOT 'VERSION') -Raw).Trim()
+    $actual = & $scriptPath -Version
+    if ($actual -cne $version) { throw 'Script version differs from VERSION' }
+    exit 0
+} catch { Write-Error $_ -ErrorAction Continue; exit 1 }
+PS
+)
+"$powershell_runner" -NoLogo -NoProfile -NonInteractive -Command "$powershell_code"
+"$powershell_runner" -NoLogo -NoProfile -NonInteractive -File "$repo_root/tests/Safety.Tests.ps1"
+bash "$repo_root/tests/GitNotes.Tests"

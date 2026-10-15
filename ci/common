@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# Shared initialization for the CI entry points.
+set -euo pipefail
+repo_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+cd -- "$repo_root"
+version=$(tr -d '\r\n' < VERSION)
+if [[ ! $version =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+  echo 'VERSION must be MAJOR.MINOR.PATCH' >&2
+  exit 1
+fi
+native_path() {
+  if command -v cygpath >/dev/null; then cygpath -w "$1"; else printf '%s\n' "$1"; fi
+}
+require_powershell() {
+  powershell_runner=${POWERSHELL:-pwsh}
+  command -v "$powershell_runner" >/dev/null || { echo "Missing $powershell_runner" >&2; exit 1; }
+}

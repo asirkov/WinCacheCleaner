@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+set -euo pipefail
+project_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+fixture=$(mktemp -d)
+trap 'rm -rf -- "$fixture"' EXIT
+mkdir -p "$fixture/ci"
+cp "$project_root/ci/common" "$project_root/ci/git-notes" "$fixture/ci/"
+cd -- "$fixture"
+git init -q
+git config user.name 'Release notes test'
+git config user.email 'release-test@example.invalid'
+printf '0.3.2\n' > VERSION
+git add VERSION
+git commit -qm 'Initial fixture'
+notes=$(bash ci/git-notes)
+[[ $notes == *'Initial fixture'* && $notes == *'Історія першого релізу'* ]]
+git tag v0.3.1
+printf 'fixture\n' > feature
+git add feature
+git commit -qm 'feat: Launch from one CMD file'
+notes=$(bash ci/git-notes)
+[[ $notes == *'Launch from one CMD file'* && $notes != *'Initial fixture'* && $notes == *'compare/v0.3.1...v0.3.2'* ]]
+git tag v0.3.2
+notes_after_tag=$(bash ci/git-notes)
+[[ $notes_after_tag == "$notes" ]]
+printf 'PASS: first-release notes, previous-tag range, current-tag rerun\n'

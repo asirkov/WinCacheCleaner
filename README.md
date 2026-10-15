@@ -68,7 +68,7 @@ registry/AppX, Windows file-locking or interactive terminal compatibility.
 
 ## Versions and branches
 
-Current version: **0.3.1**. Display it with:
+Current version: **0.3.2**. Display it with:
 
 ```powershell
 powershell.exe -NoProfile -File .\WinCacheCleaner.ps1 -Version
@@ -76,9 +76,11 @@ powershell.exe -NoProfile -File .\WinCacheCleaner.ps1 -Version
 
 Use `develop` for subsequent changes and merge reviewed changes into `main`.
 Before a new release, increment `VERSION` and `$script:AppVersion` in the script
-using MAJOR.MINOR.PATCH and write a user-facing Ukrainian entry under `## <VERSION>` in `CHANGELOG.md`.
-The release body uses only that entry; describe behavior, usage and limitations
-in plain language instead of listing commits. Keep the header version aligned.
+using MAJOR.MINOR.PATCH. Keep the header version aligned. Write clear commit
+subjects: release notes are generated from Git commits after the previous
+ancestor version tag, with commit links and a comparison link. There is no
+separate manually maintained changelog. The first release includes all commits;
+rerunning an existing version excludes its own tag when computing the range.
 The standalone script includes its version; it needs no external version file at runtime.
 
 GitHub Actions validates syntax, version consistency and safety fixtures on Linux
@@ -103,12 +105,21 @@ WinCacheCleaner.cmd -AnalyzeOnly
 WinCacheCleaner.cmd -Version
 ```
 
-Build and test the release package manually with PowerShell:
+CI entry points are Bash scripts without extensions under `ci/`. Run from
+Bash (Git Bash on Windows); each entry point resolves the project root itself:
 
-```powershell
-pwsh -NoProfile -File .\.github\scripts\Build-Release.ps1
-pwsh -NoProfile -File .\tests\Release.Tests.ps1
+```bash
+./ci/validate
+./ci/build
+./ci/test-package
 ```
+
+Requirements: Bash, Git with full history/tags, base64, sed, sha256sum and PowerShell.
+The default engine is `pwsh`; set `POWERSHELL=powershell.exe` to validate with
+Windows PowerShell 5.1. PowerShell is used to inspect/run PowerShell source/tests
+and create ZIP files; no separate PowerShell CI helper scripts are required.
+`ci/git-notes` prints generated notes. `ci/release` publishes only in a main-branch
+GitHub Actions context. Actions uses `fetch-depth: 0` for notes generation.
 
 The main-branch packaging job builds on Windows and tests the actual CMD launch
 with `-Version`, including a path containing spaces, before release publication.

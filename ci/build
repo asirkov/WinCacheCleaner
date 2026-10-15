@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+set -euo pipefail
+source "$(dirname -- "${BASH_SOURCE[0]}")/common"
+require_powershell
+output_directory=${1:-"$repo_root/dist"}
+mkdir -p -- "$output_directory"
+output_directory=$(cd -- "$output_directory" && pwd)
+files=(WinCacheCleaner.ps1 README.md LICENSE VERSION)
+for file in "${files[@]}"; do cp -- "$file" "$output_directory/$file"; done
+# A standalone CMD: exact source embedded as base64, decoded only in memory.
+{
+  cat <<'CMD'
+@echo off
+setlocal
+set "WCC_LAUNCHER=%~f0"
+set "WCC_MODE=%~1"
+powershell.exe -NoLogo -NoProfile -Command "$ErrorActionPreference='Stop'; $mode=$env:WCC_MODE; if ($mode -and $mode -notin @('-Version','-AnalyzeOnly')) { throw 'Use no arguments, -Version or -AnalyzeOnly.' }; $parts=[IO.File]::ReadAllText($env:WCC_LAUNCHER) -split '(?m)^::WCC_PAYLOAD\r?$'; if ($parts.Count -ne 2) { throw 'Invalid launcher payload' }; $source=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($parts[1].Trim())).TrimStart([char]0xFEFF); $parameters=@{}; if ($mode -eq '-Version') { $parameters.Version=$true }; if ($mode -eq '-AnalyzeOnly') { $parameters.AnalyzeOnly=$true }; & ([scriptblock]::Create($source)) @parameters"
+set "WCC_EXIT=%ERRORLEVEL%"
+if not defined WCC_MODE pause
+exit /b %WCC_EXIT%
+::WCC_PAYLOAD
+CMD
+  base64 < WinCacheCleaner.ps1 | tr -d '\r\n'
+  printf '\n'
+} | sed 's/$/\r/' > "$output_directory/WinCacheCleaner.cmd"
+bash "$repo_root/ci/git-notes" > "$output_directory/RELEASE_NOTES.md"
+files+=(WinCacheCleaner.cmd RELEASE_NOTES.md)
+(cd -- "$output_directory" && sha256sum "${files[@]}" > SHA256SUMS.txt)
+# PowerShell provides ZIP creation on both Linux and Windows Git Bash runners.
+export WCC_DIST WCC_ARCHIVE
+WCC_DIST=$(native_path "$output_directory")
+WCC_ARCHIVE="WinCacheCleaner-v${version}.zip"
+powershell_code=$(cat <<'PS'
+try {
+    $ErrorActionPreference = 'Stop'
+    $names = @('WinCacheCleaner.ps1','WinCacheCleaner.cmd','README.md','LICENSE','VERSION','RELEASE_NOTES.md','SHA256SUMS.txt')
+    $paths = @($names | ForEach-Object { Join-Path $env:WCC_DIST $_ })
+    Compress-Archive -LiteralPath $paths -DestinationPath (Join-Path $env:WCC_DIST $env:WCC_ARCHIVE) -Force
+    exit 0
+} catch { Write-Error $_ -ErrorAction Continue; exit 1 }
+PS
+)
+"$powershell_runner" -NoLogo -NoProfile -NonInteractive -Command "$powershell_code"
+printf 'Built WinCacheCleaner v%s in %s\n' "$version" "$output_directory"
