@@ -1,0 +1,237 @@
+#!/usr/bin/env bash
+set -euo pipefail
+root=$(git -C "$(dirname -- "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)
+cd -- "$root"
+phase=${1:-help}
+if [[ $phase == help ]]; then echo 'Usage: release {run|prepare|promote|sync|verify|status} MAJOR.MINOR.PATCH'; exit 0; fi
+version=${2:?An explicit target version is required}
+[[ $version =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || { echo 'Invalid target version' >&2; exit 1; }
+case $phase in run|prepare|promote|sync|verify|status) ;; *) echo 'Unknown release phase' >&2; exit 1;; esac
+for tool in git gh jq sed; do command -v "$tool" >/dev/null || { echo "Missing $tool" >&2; exit 1; }; done
+bump_branch="chore/version-${version}"
+release_branch="release-${version}"
+fail() { echo "$*" >&2; exit 1; }
+pending() { echo "Pending: $*" >&2; exit 20; }
+clean() { [[ -z $(git status --porcelain) ]] || fail 'Working tree is dirty; preserve user changes first.'; }
+# Fetch immutable version tags, not the moving latest alias.
+refresh() { git fetch --no-tags origin refs/heads/develop:refs/remotes/origin/develop refs/heads/main:refs/remotes/origin/main 'refs/tags/v*:refs/tags/v*'; }
+repo=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
+[[ $repo =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || fail 'Invalid GitHub repository identity'
+settings=$(gh api "repos/$repo")
+[[ $(jq -r '.archived' <<< "$settings") == false ]] || fail 'Repository is archived or readiness metadata is missing.'
+[[ $(jq -r '.permissions.push' <<< "$settings") == true ]] || fail 'GitHub API repository write permission is required.'
+[[ $phase == status ]] || clean
+refresh
+scratch=$(mktemp -d)
+trap 'rm -rf -- "$scratch"' EXIT
+lookup_pr() {
+  local base=$1 head=$2 list
+  list=$(gh pr list --repo "$repo" --base "$base" --head "$head" --state all --limit 100 \
+    --json number,state,url,headRefOid,mergeCommit,baseRefName,headRefName)
+  jq -e 'type == "array"' <<< "$list" >/dev/null || fail 'Invalid PR response'
+  if [[ $(jq '[.[] | select(.state == "OPEN")] | length' <<< "$list") -gt 1 ]]; then fail 'Multiple open PRs for release stage'; fi
+  if [[ $(jq length <<< "$list") -gt 0 && $(jq '[.[] | select(.state == "OPEN" or .state == "MERGED")] | length' <<< "$list") -eq 0 ]]; then
+    fail "The $head -> $base PR was closed without merging; inspect it before retrying."
+  fi
+  jq -c '(sort_by(.number) | reverse | map(select(.state == "OPEN")) | .[0]) // (sort_by(.number) | reverse | map(select(.state == "MERGED")) | .[0]) // null' <<< "$list"
+}
+assert_version() {
+  local ref=$1 manifest source readme
+  manifest=$(git show "$ref:VERSION" | tr -d '\r\n')
+  [[ $manifest == "$version" ]] || fail "$ref has version $manifest, expected $version"
+  source=$(git show "$ref:WinCacheCleaner.ps1")
+  grep -Fqx "\$script:AppVersion = '$version'" <<< "$source" || fail 'AppVersion is not aligned'
+  grep -Fqx "WinCacheCleaner v$version" <<< "$source" || fail 'Header version is not aligned'
+  readme=$(git show "$ref:README.md")
+  grep -Fq "Current version: **$version**" <<< "$readme" || fail 'README version is not aligned'
+}
+fetch_branch() {
+  local branch=$1 result
+  if git ls-remote --exit-code --heads origin "refs/heads/$branch" >/dev/null; then
+    git fetch origin "refs/heads/$branch:refs/remotes/origin/$branch"
+    return 0
+  else
+    result=$?
+    [[ $result == 2 ]] && return 2
+    fail "Failed to inspect remote branch $branch"
+  fi
+}
+body() {
+  local summary=$1 version_check=$2 docs_check=$3 manual=$4
+  cat > "$scratch/body.md" <<EOF
+## Summary
+
+$summary
+
+## Breaking changes
+
+None
+
+## Documentation changes
+
+$([[ $docs_check == x ]] && echo 'README version aligned with the release.' || echo 'None')
+
+## Manual changes
+
+- [$version_check] Upgrade the version, keeping \`VERSION\`, \`\$script:AppVersion\`, and the script header aligned.$([[ $version_check == ' ' ]] && echo ' N/A: already prepared by the version PR.')
+- [$docs_check] Update the documentation.$([[ $docs_check == ' ' ]] && echo ' N/A: no documentation changes in this integration PR.')
+- [ ] Update workflows, CI scripts, or \`AGENTS.md\` instructions. N/A: this PR does not modify them.
+
+$manual
+EOF
+}
+create_pr() {
+  local base=$1 head=$2 title=$3
+  gh pr create --repo "$repo" --base "$base" --head "$head" --title "$title" --body-file "$scratch/body.md" >&2
+  pr=$(lookup_pr "$base" "$head")
+  [[ $pr != null ]] || fail 'PR creation was not confirmed'
+}
+ci_ready() {
+  local branch=$1 sha=$2 runs result
+  runs=$(gh run list --repo "$repo" --workflow release.yml --branch "$branch" --commit "$sha" --event push --limit 20 \
+    --json databaseId,headSha,status,conclusion,url)
+  result=$(jq -c --arg sha "$sha" '[.[] | select(.headSha == $sha)] | sort_by(.databaseId) | last // null' <<< "$runs")
+  [[ $result != null ]] || pending "$branch CI has not started for $sha"
+  [[ $(jq -r .status <<< "$result") == completed ]] || pending "CI: $(jq -r .url <<< "$result")"
+  [[ $(jq -r .conclusion <<< "$result") == success ]] || fail "CI did not pass: $(jq -r .url <<< "$result")"
+}
+auto_merge() {
+  local expected=$1 subject=$2 number
+  [[ $(jq -r '.allow_auto_merge' <<< "$settings") == true ]] || fail 'Enable Allow auto-merge in GitHub repository settings.'
+  [[ $(jq -r '.allow_merge_commit' <<< "$settings") == true ]] || fail 'Enable merge commits for release/sync ancestry.'
+  [[ $(jq -r .headRefOid <<< "$pr") == "$expected" ]] || fail 'PR head changed; inspect and validate the new head.'
+  number=$(jq -r .number <<< "$pr")
+  gh pr merge "$number" --repo "$repo" --auto --merge --match-head-commit "$expected" --subject "$subject" --body ''
+  pr=$(gh pr view "$number" --repo "$repo" --json number,state,url,headRefOid,mergeCommit,baseRefName,headRefName)
+  [[ $(jq -r .state <<< "$pr") == MERGED ]] || pending "Auto-merge requested: $(jq -r .url <<< "$pr")"
+}
+prepare() {
+  pr=$(lookup_pr develop "$bump_branch")
+  if [[ $pr != null ]]; then
+    echo "Version PR: $(jq -r .url <<< "$pr") ($(jq -r .state <<< "$pr"))"
+    [[ $(jq -r .state <<< "$pr") == MERGED ]] || pending 'Version PR requires normal review and merge; it is not auto-merged.'
+    return
+  fi
+  local current validated=false
+  current=$(git show origin/develop:VERSION | tr -d '\r\n')
+  [[ $current != "$version" && $(printf '%s\n' "$current" "$version" | LC_ALL=C sort -V | head -n1) == "$current" ]] || fail 'Target version must be newer than develop.'
+  if fetch_branch "$bump_branch"; then
+    if git show-ref --verify --quiet "refs/heads/$bump_branch"; then
+      [[ $(git rev-parse "$bump_branch") == $(git rev-parse "origin/$bump_branch") ]] || fail 'Local version branch has unpublished changes; inspect it.'
+      git switch "$bump_branch"
+    else git switch -c "$bump_branch" "origin/$bump_branch"; fi
+  else
+    if git show-ref --verify --quiet "refs/heads/$bump_branch"; then git switch "$bump_branch"; else git switch -c "$bump_branch" origin/develop; fi
+    if [[ $(tr -d '\r\n' < VERSION) != "$version" ]]; then
+      [[ $(git rev-parse HEAD) == $(git rev-parse origin/develop) ]] || fail 'Version branch contains unexpected changes; inspect it before bumping.'
+      [[ $(grep -cE '^\$script:AppVersion = '\''[0-9]+\.[0-9]+\.[0-9]+'\''$' WinCacheCleaner.ps1) == 1 ]] || fail 'Expected exactly one AppVersion assignment'
+      [[ $(grep -cE '^WinCacheCleaner v[0-9]+\.[0-9]+\.[0-9]+$' WinCacheCleaner.ps1) == 1 ]] || fail 'Expected exactly one version header'
+      [[ $(grep -cE '^Current version: \*\*[0-9]+\.[0-9]+\.[0-9]+\*\*' README.md) == 1 ]] || fail 'Expected exactly one README version'
+      sed -E -i "s/^(\\\$script:AppVersion = ')[0-9]+\\.[0-9]+\\.[0-9]+(')$/\\1${version}\\2/; s/^(WinCacheCleaner v)[0-9]+\\.[0-9]+\\.[0-9]+$/\\1${version}/" WinCacheCleaner.ps1
+      sed -E -i "s/^(Current version: \\*\\*)[0-9]+\\.[0-9]+\\.[0-9]+(\\*\\*)/\\1${version}\\2/" README.md
+      printf '%s\n' "$version" > VERSION
+      ./ci/validate
+      ./ci/build
+      ./ci/test-package
+      validated=true
+      git diff --check
+      git add VERSION WinCacheCleaner.ps1 README.md
+      git commit -m "chore(release): prepare version $version"
+    fi
+  fi
+  assert_version HEAD
+  if [[ $validated == false ]]; then ./ci/validate; ./ci/build; ./ci/test-package; fi
+  ./ci/check-commits
+  git push -u origin "$bump_branch"
+  body "Prepare version $version for the release pipeline. Local validation and packaging checks passed." x x 'Review and merge this version PR into develop before cutting the release branch.'
+  create_pr develop "$bump_branch" "chore(release): prepare version $version"
+  pending "Review and merge version PR: $(jq -r .url <<< "$pr")"
+}
+promote() {
+  local version_pr snapshot
+  version_pr=$(lookup_pr develop "$bump_branch")
+  [[ $version_pr != null && $(jq -r .state <<< "$version_pr") == MERGED ]] || pending 'Version PR has not merged into develop.'
+  assert_version origin/develop
+  if fetch_branch "$release_branch"; then
+    snapshot=$(git rev-parse "origin/$release_branch")
+    git merge-base --is-ancestor "$snapshot" origin/develop || fail 'Existing release branch diverges from develop.'
+  else snapshot=$(git rev-parse origin/develop); fi
+  assert_version "$snapshot"
+  ci_ready develop "$snapshot"
+  if ! git show-ref --verify --quiet "refs/remotes/origin/$release_branch"; then
+    git push origin "$snapshot:refs/heads/$release_branch"
+  fi
+  pr=$(lookup_pr main "$release_branch")
+  if [[ $pr == null ]]; then
+    body "Release version $version from the validated develop snapshot $snapshot." ' ' ' ' 'This PR should auto-merge with a merge commit; required reviews/checks remain in force.'
+    create_pr main "$release_branch" "chore(release): release version $version"
+  fi
+  if [[ $(jq -r .state <<< "$pr") != MERGED ]]; then auto_merge "$snapshot" "chore(release): merge $release_branch into main"; fi
+  echo "Release PR merged: $(jq -r .url <<< "$pr")"
+}
+sync_develop() {
+  local release_pr main_sha
+  release_pr=$(lookup_pr main "$release_branch")
+  [[ $release_pr != null && $(jq -r .state <<< "$release_pr") == MERGED ]] || pending 'Release PR has not merged into main.'
+  assert_version origin/main
+  main_sha=$(git rev-parse origin/main)
+  pr=$(lookup_pr develop main)
+  if git merge-base --is-ancestor origin/main origin/develop; then
+    echo 'Develop already contains main.'
+    return
+  fi
+  # A previous main->develop PR from another release does not satisfy this one.
+  if [[ $pr != null && $(jq -r .state <<< "$pr") == MERGED ]]; then pr=null; fi
+  if [[ $pr == null ]]; then
+    body "Synchronize main into develop after release $version." ' ' ' ' 'This PR should auto-merge with a merge commit to preserve the release ancestry.'
+    create_pr develop main "chore(release): sync main into develop after $version"
+  fi
+  auto_merge "$main_sha" "chore(release): sync main into develop after $version"
+  echo "Sync PR merged: $(jq -r .url <<< "$pr")"
+}
+verify() {
+  local release_pr sync_pr sha release_json latest_refs version_refs oid published_commit
+  release_pr=$(lookup_pr main "$release_branch")
+  [[ $release_pr != null && $(jq -r .state <<< "$release_pr") == MERGED ]] || pending 'Release PR not merged'
+  sha=$(jq -r '.mergeCommit.oid // empty' <<< "$release_pr")
+  [[ -n $sha ]] || fail 'Missing release merge commit'
+  ci_ready main "$sha"
+  refresh
+  git merge-base --is-ancestor "$sha" origin/main || fail 'Main does not contain the release merge'
+  git merge-base --is-ancestor origin/main origin/develop || pending 'Develop has not synchronized main'
+  assert_version origin/main
+  assert_version origin/develop
+  sync_pr=$(lookup_pr develop main)
+  [[ $sync_pr != null && $(jq -r .state <<< "$sync_pr") == MERGED ]] || pending 'Main-to-develop sync PR has not merged'
+  [[ $(jq -r .headRefOid <<< "$sync_pr") == $(git rev-parse origin/main) ]] || pending 'Sync PR does not include the current main head'
+  version_refs=$(git ls-remote --tags origin "refs/tags/v$version")
+  oid=$(awk -v ref="refs/tags/v$version" '$2 == ref {print $1}' <<< "$version_refs")
+  [[ -n $oid ]] || pending "Version tag v$version not published"
+  published_commit=$(git rev-parse "${oid}^{commit}")
+  [[ $published_commit == "$sha" ]] || fail 'Version tag differs from the release merge commit'
+  release_json=$(gh release view "v$version" --repo "$repo" --json tagName,isDraft,isPrerelease,assets,url)
+  jq -e '.isDraft == false and .isPrerelease == false' <<< "$release_json" >/dev/null || fail 'Release is draft/prerelease'
+  for asset in WinCacheCleaner.cmd WinCacheCleaner.ps1 SHA256SUMS.txt "WinCacheCleaner-v$version.zip"; do
+    jq -e --arg name "$asset" '.assets | any(.name == $name and .state == "uploaded")' <<< "$release_json" >/dev/null || fail "Missing/unuploaded release asset: $asset"
+  done
+  latest_refs=$(git ls-remote --tags origin refs/tags/latest)
+  oid=$(awk '$2 == "refs/tags/latest" {print $1}' <<< "$latest_refs")
+  [[ -n $oid ]] || pending 'Latest Git alias not promoted'
+  if ! git cat-file -e "$oid" 2>/dev/null; then git fetch --no-tags origin "$oid"; fi
+  [[ $(git rev-parse "${oid}^{commit}") == "$sha" ]] || pending 'Latest Git alias not promoted'
+  [[ $(gh api "repos/$repo/releases/latest" --jq .tag_name) == "v$version" ]] || pending 'GitHub Latest marker not promoted'
+  echo "Release complete: $(jq -r .url <<< "$release_json")"
+}
+case $phase in
+  status)
+    for pair in "develop $bump_branch" "main $release_branch" 'develop main'; do
+      read -r base head <<< "$pair"
+      echo "$head -> $base: $(lookup_pr "$base" "$head")"
+    done
+    ;;
+  prepare) prepare;;
+  promote) promote;;
+  sync) sync_develop;;
+  verify) verify;;
+  run) prepare; refresh; promote; refresh; sync_develop; verify;;
+esac

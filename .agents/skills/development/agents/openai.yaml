@@ -1,0 +1,4 @@
+interface:
+  display_name: "Development"
+  short_description: "Implement changes through a PR into develop"
+  default_prompt: "Use $development to implement this change and prepare a PR into develop."

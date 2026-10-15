@@ -79,5 +79,64 @@ Run checks with Bash/Git Bash, PowerShell 7 and Node.js 20+:
 ./ci/validate
 ```
 
-Tests use isolated temporary fixtures. Linux checks do not verify Windows
-PowerShell 5.1, CMD startup, registry/AppX or Windows file locking.
+Requirements: Bash, Git with full history/tags, base64, sed, sha256sum and PowerShell.
+The default engine is `pwsh`; set `POWERSHELL=powershell.exe` to validate with
+Windows PowerShell 5.1. PowerShell is used to inspect/run PowerShell source/tests
+and create ZIP files; no separate PowerShell CI helper scripts are required.
+`ci/git-notes` prints generated notes. `ci/release` publishes only in a main-branch
+GitHub Actions context. Actions uses `fetch-depth: 0` for notes generation.
+
+CI packages use exact Git blob bytes so Windows CRLF conversion cannot change
+release assets or their checksums. The main-branch packaging job builds on Windows and tests the actual CMD launch
+with `-Version`, including a path containing spaces, before release publication.
+
+## Contribution rules
+
+See [AGENTS.md](AGENTS.md). Write all new commit messages in English using
+[Conventional Commits 1.0.0](https://www.conventionalcommits.org/en/v1.0.0/),
+for example `fix(browser): preserve profile settings` or `ci: validate release packages`.
+Run `./ci/check-commits` before pushing. It installs pinned development-only
+commitlint tools with `npm ci` (Node.js 20+) and checks commits after the documented
+adoption baseline, including explicit merges. Existing released history is retained.
+CI checks all new commits on the pushed `main` or `develop` branch.
+
+GPU/game scans show file counts, logical bytes and elapsed time. Press Esc to
+skip the current GPU/game target; skipped targets are excluded from cleanup.
+The per-target limit defaults to 120 seconds; for a slow disk, use
+`powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\WinCacheCleaner.ps1 -ScanTimeoutSeconds 600`.
+Scanning reads metadata, not file contents. The timer/Esc check runs between
+filesystem operations; it cannot interrupt a single blocked OS call. Ctrl+C
+stops the scan, before any cleanup confirmation.
+
+## Latest release
+
+After a successful main-branch publication, the movable Git tag `latest` points
+to the exact commit of `v<VERSION>`, and that GitHub release is marked Latest.
+Version tags and existing assets stay immutable. Older-release reruns cannot
+move the alias backwards; concurrent tag changes are protected by an exact
+`--force-with-lease`. Failed publication does not promote the alias.
+If the GitHub marker update fails after the tag push, rerunning repairs it.
+
+Download the standalone launcher from the latest GitHub release:
+[WinCacheCleaner.cmd](https://github.com/asirkov/WinCacheCleaner/releases/latest/download/WinCacheCleaner.cmd).
+`latest` is a Git alias, not a separate release with duplicate assets.
+
+## Codex workflow skills
+
+[development](.agents/skills/development/SKILL.md) documents feature branches,
+local checks and PRs into develop. [release](.agents/skills/release/SKILL.md) is
+manual-only; invoke `$release 0.5.0` after this skill is merged and when ready
+to start that release. It does not activate from release/version mentions.
+
+The release script creates a version PR into develop for normal review, then
+a release-branch PR into main with auto-merge, then a main-to-develop PR with
+auto-merge. It checks actual merges, CI, publication, assets and latest promotion.
+
+```bash
+.agents/skills/release/scripts/release run 0.5.0
+```
+
+Repeat to resume. Exit 20 means a pending review, merge, CI or publication; other
+nonzero statuses indicate a blocker. The script never overrides protection or
+creates releases/tags outside Actions. GitHub API access and repository auto-merge
+settings are prerequisites. All helper scripts are extensionless Bash files.
