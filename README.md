@@ -74,7 +74,9 @@ Current version: **0.4.1**. Display it with:
 powershell.exe -NoProfile -File .\WinCacheCleaner.ps1 -Version
 ```
 
-Use `develop` for subsequent changes. Promote releases in this order:
+Start every change in a separate feature branch based on `develop`, and open a
+pull request into `develop`. Changes must not be pushed directly to `develop`
+or `main`. Promote authorized releases in this order:
 `develop -> release-<VERSION> -> main -> develop`. Actions starts only for pushes
 to `main` and `develop`; release branches do not start Actions. Packaging and
 publication run only on `main`.

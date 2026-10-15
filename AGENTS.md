@@ -3,7 +3,12 @@
 ## Repository and branches
 
 Use the existing checkout. Cloud tasks are isolated; do not create Git worktrees
-unless the user explicitly requests one. Make changes on `develop`. For an authorized release, promote in this order:
+unless the user explicitly requests one. Every feature, fix, documentation or CI
+change must start on a separate branch based on `develop` and enter `develop`
+through a pull request. Never push change commits directly to `develop` or `main`.
+Open feature PRs with `develop` as the base; use an English Conventional Commit
+title and describe behavior and validation. For an authorized release, promote
+in this order:
 `develop -> release-<VERSION> -> main -> develop`. Use a Conventional Commit
 message for the release merge into `main`, then sync `develop` from `main`.
 Actions may start only for pushes to `main` and `develop`: no release-branch,
