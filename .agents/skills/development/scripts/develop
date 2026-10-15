@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+set -euo pipefail
+root=$(git -C "$(dirname -- "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)
+cd -- "$root"
+command_name=${1:-help}
+shift || true
+clean() { [[ -z $(git status --porcelain) ]] || { echo 'Preserve/commit user changes before switching branches.' >&2; exit 1; }; }
+case $command_name in
+  start)
+    clean
+    branch=${1:?Usage: develop start <feature-branch>}
+    git check-ref-format --branch "$branch" >/dev/null
+    case $branch in main|develop|release-*) echo 'Use a separate feature/fix/docs/ci/chore branch.' >&2; exit 1;; esac
+    git fetch origin refs/heads/develop:refs/remotes/origin/develop
+    git switch -c "$branch" origin/develop
+    ;;
+  validate)
+    ./ci/validate
+    ./ci/check-commits
+    if [[ ${1:-} == --package ]]; then ./ci/build; ./ci/test-package; fi
+    ;;
+  pr)
+    title=${1:?Usage: develop pr <conventional-title> <body-file>}
+    body=${2:?Missing PR body file}
+    [[ -f $body ]] || { echo 'Missing PR body file' >&2; exit 1; }
+    clean
+    branch=$(git branch --show-current)
+    case $branch in ''|main|develop|release-*) echo 'A feature branch is required.' >&2; exit 1;; esac
+    ./ci/check-commits
+    printf '%s\n' "$title" | ./node_modules/.bin/commitlint --strict
+    repository=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
+    git push -u origin "$branch"
+    prs=$(gh pr list --repo "$repository" --base develop --head "$branch" --state open --json url)
+    if [[ $(jq length <<< "$prs") -gt 0 ]]; then jq -r '.[0].url' <<< "$prs"; else
+      gh pr create --repo "$repository" --base develop --head "$branch" --title "$title" --body-file "$body"
+    fi
+    ;;
+  help) echo 'Usage: develop start <branch> | validate [--package] | pr <title> <body-file>';;
+  *) echo 'Unknown development command' >&2; exit 1;;
+esac

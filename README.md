@@ -166,3 +166,23 @@ If the GitHub marker update fails after the tag push, rerunning repairs it.
 Download the standalone launcher from the latest GitHub release:
 [WinCacheCleaner.cmd](https://github.com/asirkov/WinCacheCleaner/releases/latest/download/WinCacheCleaner.cmd).
 `latest` is a Git alias, not a separate release with duplicate assets.
+
+## Codex workflow skills
+
+[development](.agents/skills/development/SKILL.md) documents feature branches,
+local checks and PRs into develop. [release](.agents/skills/release/SKILL.md) is
+manual-only; invoke `$release 0.5.0` after this skill is merged and when ready
+to start that release. It does not activate from release/version mentions.
+
+The release script creates a version PR into develop for normal review, then
+a release-branch PR into main with auto-merge, then a main-to-develop PR with
+auto-merge. It checks actual merges, CI, publication, assets and latest promotion.
+
+```bash
+.agents/skills/release/scripts/release run 0.5.0
+```
+
+Repeat to resume. Exit 20 means a pending review, merge, CI or publication; other
+nonzero statuses indicate a blocker. The script never overrides protection or
+creates releases/tags outside Actions. GitHub API access and repository auto-merge
+settings are prerequisites. All helper scripts are extensionless Bash files.

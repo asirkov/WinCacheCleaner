@@ -1,0 +1,159 @@
+#!/usr/bin/env bash
+# State-machine tests use real local Git and a fixture GitHub API, not real PRs.
+set -euo pipefail
+project_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+fixture=$(mktemp -d)
+trap 'rm -rf -- "$fixture"' EXIT
+mkdir -p "$fixture/project/.agents/skills/release/scripts" "$fixture/project/ci" "$fixture/api/bin"
+cp "$project_root/.agents/skills/release/scripts/release" "$fixture/project/.agents/skills/release/scripts/"
+cd "$fixture/project"
+git init -q -b develop
+git config user.name 'Release skill test'
+git config user.email 'release-skill@example.invalid'
+printf '0.4.1\n' > VERSION
+printf '\357\273\277' > WinCacheCleaner.ps1
+cat >> WinCacheCleaner.ps1 <<'PS'
+#requires -Version 5.1
+<#
+WinCacheCleaner v0.4.1
+#>
+$script:AppVersion = '0.4.1'
+PS
+printf 'Current version: **0.4.1**.\n' > README.md
+for check in validate build test-package check-commits; do
+  printf '#!/usr/bin/env bash\nexit 0\n' > "ci/$check"
+  chmod +x "ci/$check"
+done
+git add .
+git commit -qm 'chore: create release skill fixture'
+git branch main
+git init --bare -q "$fixture/remote.git"
+git remote add origin "$fixture/remote.git"
+git push -q origin develop main
+export SKILL_API="$fixture/api"
+printf '[]\n' > "$SKILL_API/prs.json"
+printf 'success\n' > "$SKILL_API/ci"
+cat > "$SKILL_API/settings.json" <<'JSON'
+{"archived":false,"permissions":{"push":true},"allow_auto_merge":true,"allow_merge_commit":true}
+JSON
+cat > "$SKILL_API/bin/gh" <<'MOCK'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$*" >> "$SKILL_API/calls"
+kind=$1; shift
+if [[ $kind == repo ]]; then echo 'fixture/repo'; exit 0; fi
+if [[ $kind == api ]]; then
+  if [[ $1 == */releases/latest ]]; then echo 'v0.5.0'; else cat "$SKILL_API/settings.json"; fi
+  exit 0
+fi
+if [[ $kind == run ]]; then
+  sha=''; prev=''
+  for arg in "$@"; do if [[ $prev == --commit ]]; then sha=$arg; fi; prev=$arg; done
+  state=$(cat "$SKILL_API/ci")
+  if [[ $state == absent ]]; then echo '[]'; exit 0; fi
+  status=completed; [[ $state != pending ]] || status=in_progress
+  jq -nc --arg sha "$sha" --arg status "$status" --arg conclusion "$state" '[{databaseId:1,headSha:$sha,status:$status,conclusion:$conclusion,url:"https://fixture/run/1"}]'
+  exit 0
+fi
+if [[ $kind == release ]]; then
+  jq -nc '{tagName:"v0.5.0",isDraft:false,isPrerelease:false,url:"https://fixture/release/v0.5.0",assets:["WinCacheCleaner.cmd","WinCacheCleaner.ps1","SHA256SUMS.txt","WinCacheCleaner-v0.5.0.zip"] | map({name:.,state:"uploaded"})}'
+  exit 0
+fi
+[[ $kind == pr ]]
+action=$1; shift
+base=''; head=''; title=''; body=''; previous=''
+for arg in "$@"; do
+  case $previous in --base) base=$arg;; --head) head=$arg;; --title) title=$arg;; --body-file) body=$arg;; esac
+  previous=$arg
+done
+case $action in
+  list) jq --arg base "$base" --arg head "$head" '[.[] | select(.baseRefName == $base and .headRefName == $head)]' "$SKILL_API/prs.json";;
+  create)
+    number=$(jq '([.[].number] | max // 0) + 1' "$SKILL_API/prs.json")
+    oid=$(git ls-remote origin "refs/heads/$head" | cut -f1)
+    cp "$body" "$SKILL_API/body-$number.md"
+    jq --argjson n "$number" --arg base "$base" --arg head "$head" --arg oid "$oid" --arg title "$title" '. + [{number:$n,state:"OPEN",url:("https://fixture/pr/"+($n|tostring)),headRefOid:$oid,mergeCommit:null,baseRefName:$base,headRefName:$head,title:$title}]' "$SKILL_API/prs.json" > "$SKILL_API/next"
+    mv "$SKILL_API/next" "$SKILL_API/prs.json"
+    echo "https://fixture/pr/$number";;
+  view) jq --argjson n "$1" '.[] | select(.number == $n)' "$SKILL_API/prs.json";;
+  merge) [[ "$*" == *'--auto --merge'* && "$*" == *'--match-head-commit'* && "$*" != *'--admin'* ]];;
+  *) exit 99;;
+esac
+MOCK
+chmod +x "$SKILL_API/bin/gh"
+export PATH="$SKILL_API/bin:$PATH"
+runner=.agents/skills/release/scripts/release
+expect_code() {
+  local expected=$1; shift
+  local actual=0
+  "$@" > "$SKILL_API/output" 2>&1 || actual=$?
+  if [[ $actual != "$expected" ]]; then cat "$SKILL_API/output" >&2; echo "Expected $expected, got $actual" >&2; exit 1; fi
+}
+merge_record() {
+  local n=$1 sha=$2
+  jq --argjson n "$n" --arg sha "$sha" 'map(if .number == $n then .state="MERGED" | .mergeCommit={oid:$sha} else . end)' "$SKILL_API/prs.json" > "$SKILL_API/next"
+  mv "$SKILL_API/next" "$SKILL_API/prs.json"
+}
+# Invalid input and dirty user work must prevent all mutations.
+expect_code 1 bash "$runner" prepare '0.5.0;evil'
+printf 'user work\n' > user-file
+expect_code 1 bash "$runner" prepare 0.5.0
+[[ $(cat VERSION) == 0.4.1 ]]
+rm user-file
+expect_code 20 bash "$runner" run 0.5.0
+[[ $(cat VERSION) == 0.5.0 ]]
+grep -Fq "\$script:AppVersion = '0.5.0'" WinCacheCleaner.ps1
+grep -Fq 'WinCacheCleaner v0.5.0' WinCacheCleaner.ps1
+grep -Fq '**0.5.0**' README.md
+[[ $(head -c3 WinCacheCleaner.ps1 | od -An -tx1 | tr -d ' \n') == efbbbf ]]
+[[ $(jq length "$SKILL_API/prs.json") == 1 ]]
+! grep -q '^pr merge' "$SKILL_API/calls"
+expect_code 20 bash "$runner" prepare 0.5.0
+[[ $(jq length "$SKILL_API/prs.json") == 1 ]]
+expect_code 20 bash "$runner" promote 0.5.0
+[[ -z $(git ls-remote origin refs/heads/release-0.5.0) ]]
+git switch -q develop
+git merge -q --no-ff chore/version-0.5.0 -m 'chore(release): merge version PR'
+git push -q origin develop
+merge_record 1 "$(git rev-parse HEAD)"
+printf 'pending\n' > "$SKILL_API/ci"
+expect_code 20 bash "$runner" promote 0.5.0
+printf 'failure\n' > "$SKILL_API/ci"
+expect_code 1 bash "$runner" promote 0.5.0
+[[ -z $(git ls-remote origin refs/heads/release-0.5.0) ]]
+printf 'success\n' > "$SKILL_API/ci"
+jq '.allow_auto_merge=false' "$SKILL_API/settings.json" > "$SKILL_API/next"
+mv "$SKILL_API/next" "$SKILL_API/settings.json"
+expect_code 1 bash "$runner" promote 0.5.0
+jq '.allow_auto_merge=true' "$SKILL_API/settings.json" > "$SKILL_API/next"
+mv "$SKILL_API/next" "$SKILL_API/settings.json"
+expect_code 20 bash "$runner" promote 0.5.0
+snapshot=$(git rev-parse origin/develop)
+[[ $(git ls-remote origin refs/heads/release-0.5.0 | cut -f1) == "$snapshot" ]]
+expect_code 20 bash "$runner" promote 0.5.0
+[[ $(jq length "$SKILL_API/prs.json") == 2 ]]
+expect_code 20 bash "$runner" sync 0.5.0
+[[ $(jq length "$SKILL_API/prs.json") == 2 ]]
+git fetch -q origin refs/heads/release-0.5.0:refs/remotes/origin/release-0.5.0
+git switch -q main
+git merge -q --no-ff origin/release-0.5.0 -m 'chore(release): merge release-0.5.0 into main'
+released=$(git rev-parse HEAD)
+git push -q origin main
+merge_record 2 "$released"
+expect_code 20 bash "$runner" sync 0.5.0
+[[ $(jq length "$SKILL_API/prs.json") == 3 ]]
+grep -q -- '--match-head-commit' "$SKILL_API/calls"
+git switch -q develop
+git merge -q --no-ff main -m 'chore(release): sync main into develop after 0.5.0'
+git push -q origin develop
+merge_record 3 "$(git rev-parse HEAD)"
+git tag v0.5.0 "$released"
+git tag latest "$released"
+git push -q origin refs/tags/v0.5.0 refs/tags/latest
+expect_code 0 bash "$runner" run 0.5.0
+grep -q 'Release complete' "$SKILL_API/output"
+[[ $(jq length "$SKILL_API/prs.json") == 3 ]]
+# A later moving latest tag must not make version-tag fetches clobber local tags.
+git push -q --force origin "$snapshot:refs/tags/latest"
+expect_code 20 bash "$runner" verify 0.5.0
+printf 'PASS: version PR, manual review gate, CI gate, release auto-merge, sync auto-merge, resume, publication verification, dirty/input guards\n'

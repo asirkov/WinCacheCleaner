@@ -8,9 +8,12 @@ change must start on a separate branch based on `develop` and enter `develop`
 through a pull request. Never push change commits directly to `develop` or `main`.
 Open feature PRs with `develop` as the base; use an English Conventional Commit
 title and describe behavior and validation. For an authorized release, promote
-in this order:
-`develop -> release-<VERSION> -> main -> develop`. Use a Conventional Commit
-message for the release merge into `main`, then sync `develop` from `main`.
+in this order, using the manually invoked `$release` skill:
+version-bump PR -> `develop`, then `release-<VERSION>` -> PR into `main`
+(auto-merge), then `main` -> PR into `develop` (auto-merge). The version PR uses
+normal review; do not auto-merge it unless the user separately requests that.
+Use merge commits and Conventional Commit subjects for release/sync ancestry.
+Never start the release skill implicitly or merely because a version is mentioned.
 Actions may start only for pushes to `main` and `develop`: no release-branch,
 pull request or workflow_dispatch triggers. Never build or publish releases
 automatically from `develop`.
@@ -117,3 +120,12 @@ version tag's exact commit and mark that GitHub release Latest. Use an exact
 remote-object lease; never force blindly. An older rerun must not roll latest
 backwards. Keep versioned tags and assets immutable. Test against local bare Git
 repositories and a mocked GitHub CLI; never mutate real release metadata in tests.
+
+## Repository Codex skills
+
+- `.agents/skills/development/SKILL.md` describes the development and feature-PR flow.
+- `.agents/skills/release/SKILL.md` is manual-only (`allow_implicit_invocation: false`).
+  The user explicitly invokes `$release <version>` after the skill's PR is merged.
+  Its bundled script owns deterministic version/branch/PR/auto-merge/verification
+  steps; call it rather than improvising release commands. Editing/installing
+  release skills does not authorize executing the release flow.

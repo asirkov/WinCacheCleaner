@@ -13,3 +13,6 @@ tests/Publish.Tests text eol=lf
 /VERSION text eol=lf
 /LICENSE text eol=lf
 tests/Latest.Tests text eol=lf
+.agents/skills/*/scripts/* text eol=lf
+.agents/skills/*/agents/*.yaml text eol=lf
+tests/ReleaseSkill.Tests text eol=lf
