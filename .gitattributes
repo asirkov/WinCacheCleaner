@@ -1,4 +1,10 @@
+# Release assets must match Git bytes on Windows and Linux.
+WinCacheCleaner.ps1 text eol=lf
+README.md text eol=lf
+LICENSE text eol=lf
+VERSION text eol=lf
 ci/* text eol=lf
 tests/GitNotes.Tests text eol=lf
+tests/Checkout.Tests text eol=lf
 .github/workflows/*.yml text eol=lf
 tests/Publish.Tests text eol=lf
