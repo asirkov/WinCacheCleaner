@@ -68,7 +68,7 @@ registry/AppX, Windows file-locking or interactive terminal compatibility.
 
 ## Versions and branches
 
-Current version: **0.3.2**. Display it with:
+Current version: **0.3.3**. Display it with:
 
 ```powershell
 powershell.exe -NoProfile -File .\WinCacheCleaner.ps1 -Version
@@ -123,3 +123,21 @@ GitHub Actions context. Actions uses `fetch-depth: 0` for notes generation.
 
 The main-branch packaging job builds on Windows and tests the actual CMD launch
 with `-Version`, including a path containing spaces, before release publication.
+
+## Contribution rules
+
+See [AGENTS.md](AGENTS.md). Write all new commit messages in English using
+[Conventional Commits 1.0.0](https://www.conventionalcommits.org/en/v1.0.0/),
+for example `fix(browser): preserve profile settings` or `ci: validate release packages`.
+Run `./ci/check-commits` before pushing. It installs pinned development-only
+commitlint tools with `npm ci` (Node.js 20+) and checks commits after the documented
+adoption baseline, including explicit merges. Existing released history is retained.
+CI checks PR branch commits instead of GitHub's synthetic merge commit.
+
+GPU/game scans show file counts, logical bytes and elapsed time. Press Esc to
+skip the current GPU/game target; skipped targets are excluded from cleanup.
+The per-target limit defaults to 120 seconds; for a slow disk, use
+`powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\WinCacheCleaner.ps1 -ScanTimeoutSeconds 600`.
+Scanning reads metadata, not file contents. The timer/Esc check runs between
+filesystem operations; it cannot interrupt a single blocked OS call. Ctrl+C
+stops the scan, before any cleanup confirmation.

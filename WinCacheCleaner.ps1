@@ -1,14 +1,14 @@
 ﻿#requires -Version 5.1
 <#
-WinCacheCleaner v0.3.2
+WinCacheCleaner v0.3.3
 Run in Windows Terminal / PowerShell (preferably as Administrator).
 Space toggles a choice, Enter starts, Esc goes back.
 AppData audit is report-only. GPU/game caches are reviewed individually before cleanup.
 #>
 
-param([switch]$AnalyzeOnly, [switch]$Version)
+param([switch]$AnalyzeOnly, [switch]$Version, [ValidateRange(1, 86400)][int]$ScanTimeoutSeconds = 120)
 
-$script:AppVersion = '0.3.2'
+$script:AppVersion = '0.3.3'
 
 $ErrorActionPreference = 'Stop'
 $MinimumAgeDays = 7
@@ -35,12 +35,65 @@ function Test-Admin {
     return $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 }
 
-# Traverse filesystem without following junctions, directory symlinks, or file symlinks.
-function Visit-Files([string]$Root, [scriptblock]$Action) {
+function New-ScanProgress([string]$Title, [string]$Path) {
+    return [pscustomobject]@{
+        Title=$Title; Path=$Path; Files=0; Bytes=[long]0; Skipped=$false; Reason=''
+        Clock=[Diagnostics.Stopwatch]::StartNew(); LastUpdate=[long]-500
+        DeadlineUtc=[datetime]::UtcNow.AddSeconds($ScanTimeoutSeconds)
+    }
+}
+
+function Test-ScanSkipRequested {
+    try {
+        if (-not [Console]::IsInputRedirected -and [Console]::KeyAvailable) {
+            return [Console]::ReadKey($true).Key -eq [ConsoleKey]::Escape
+        }
+    } catch { } # Hosts without console input still receive progress.
+    return $false
+}
+
+function Update-ScanProgress($State, $File = $null, [switch]$Force) {
+    if ($null -eq $State) { return }
+    if ($null -ne $File) {
+        $State.Files++
+        $State.Bytes += [long]$File.Length
+    }
+    $elapsed = $State.Clock.ElapsedMilliseconds
+    if (-not $Force -and ($elapsed - $State.LastUpdate) -lt 250) { return }
+    $State.LastUpdate = $elapsed
+    if ([datetime]::UtcNow -ge $State.DeadlineUtc) {
+        $State.Skipped = $true
+        $State.Reason = 'scan time limit reached'
+    } elseif (Test-ScanSkipRequested) {
+        $State.Skipped = $true
+        $State.Reason = 'Esc pressed'
+    }
+    $status = '{0} files, {1}, {2:N1}s | Esc: skip category' -f $State.Files, (Format-Size $State.Bytes), $State.Clock.Elapsed.TotalSeconds
+    Write-Progress -Id 7 -Activity $State.Title -Status $status -CurrentOperation $State.Path
+}
+
+function Complete-ScanProgress($State) {
+    if ($null -eq $State) { return }
+    $State.Clock.Stop()
+    Write-Progress -Id 7 -Activity $State.Title -Completed
+    if ($State.Skipped) {
+        Write-Warning "$($State.Title): skipped ($($State.Reason)); partial results excluded from cleanup."
+    } else {
+        Write-Host ('  {0} files scanned in {1:N1}s.' -f $State.Files, $State.Clock.Elapsed.TotalSeconds) -ForegroundColor DarkGray
+    }
+}
+
+# Traverse filesystem metadata without reading contents or following reparse points.
+# Optional scan state is never supplied by cleanup functions.
+# Use a distinct callback name: $Action belongs to Visit-GpuTargetFiles.
+function Visit-Files([string]$Root, [scriptblock]$Visitor, $ScanState = $null) {
     if (-not (Test-Path -LiteralPath $Root -PathType Container)) { return }
+    Update-ScanProgress $ScanState -Force
+    if ($null -ne $ScanState -and $ScanState.Skipped) { return }
     $folders = New-Object 'System.Collections.Generic.Stack[System.String]'
     $folders.Push($Root)
     while ($folders.Count -gt 0) {
+        if ($null -ne $ScanState -and $ScanState.Skipped) { break }
         $path = $folders.Pop()
         try {
             $dir = [System.IO.DirectoryInfo]::new($path)
@@ -48,11 +101,16 @@ function Visit-Files([string]$Root, [scriptblock]$Action) {
             foreach ($file in $dir.EnumerateFiles()) {
                 try {
                     if (($file.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { continue }
-                    & $Action $file
+                    Update-ScanProgress $ScanState $file
+                    if ($null -ne $ScanState -and $ScanState.Skipped) { break }
+                    & $Visitor $file
                 } catch { } # Locked and inaccessible files are skipped.
             }
+            if ($null -ne $ScanState -and $ScanState.Skipped) { break }
             foreach ($subdir in $dir.EnumerateDirectories()) {
                 try {
+                    Update-ScanProgress $ScanState
+                    if ($null -ne $ScanState -and $ScanState.Skipped) { break }
                     if (($subdir.Attributes -band [IO.FileAttributes]::ReparsePoint) -eq 0) {
                         $folders.Push($subdir.FullName)
                     }
@@ -132,19 +190,23 @@ function Get-GpuGameTargets([string]$DriveRoot) {
     return @($targets)
 }
 
-function Visit-GpuTargetFiles($Target, [scriptblock]$Action) {
+function Visit-GpuTargetFiles($Target, [scriptblock]$Action, $ScanState = $null) {
     if ($Target.Recurse) {
         Visit-Files $Target.Path {
             param($file)
             if ($file.Name -like $Target.Pattern) { & $Action $file }
-        }
+        } -ScanState $ScanState
     } else {
+        Update-ScanProgress $ScanState -Force
+        if ($null -ne $ScanState -and $ScanState.Skipped) { return }
         try {
             $dir = [IO.DirectoryInfo]::new($Target.Path)
             if (($dir.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { return }
             foreach ($file in $dir.EnumerateFiles()) {
                 try {
                     if (($file.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { continue }
+                    Update-ScanProgress $ScanState $file
+                    if ($null -ne $ScanState -and $ScanState.Skipped) { break }
                     if ($file.Name -like $Target.Pattern) { & $Action $file }
                 } catch { } # Files in use / inaccessible files are skipped.
             }
@@ -158,11 +220,15 @@ function Scan-GpuGame([string]$DriveRoot) {
     foreach ($target in @(Get-GpuGameTargets $DriveRoot)) {
         Write-Host "Scanning $($target.Name)..." -ForegroundColor DarkCyan
         $measurement = [pscustomobject]@{ Bytes=[long]0; Count=0 }
-        Visit-GpuTargetFiles $target {
-            param($file)
-            $measurement.Bytes += [long]$file.Length
-            $measurement.Count++
-        }
+        $progress = New-ScanProgress $target.Name $target.Path
+        try {
+            Visit-GpuTargetFiles $target {
+                param($file)
+                $measurement.Bytes += [long]$file.Length
+                $measurement.Count++
+            } -ScanState $progress
+        } finally { Complete-ScanProgress $progress }
+        if ($progress.Skipped) { continue }
         if ($measurement.Count -gt 0) {
             $entries += [pscustomobject]@{
                 Target=$target
