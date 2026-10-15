@@ -1,6 +1,18 @@
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot '../WinCacheCleaner.ps1')
 function Assert($Condition, $Message) { if (-not $Condition) { throw $Message } }
+# Cleanup must require an explicit Y/y; every other response cancels.
+try {
+    function Read-Host { param($Prompt) return $script:ConfirmationAnswer }
+    foreach ($answer in @('Y', 'y', 'N', 'n', '', 'yes', 'CLEAN', 'LEFTOVERS', 'invalid', $null)) {
+        $script:ConfirmationAnswer = $answer
+        $confirmed = Confirm-Action 'Fixture confirmation?'
+        Assert ($confirmed -eq ($answer -cin @('Y', 'y'))) "Unexpected confirmation result for '$answer'"
+    }
+} finally {
+    Remove-Item Function:Read-Host
+    Remove-Variable ConfirmationAnswer -Scope Script
+}
 $root = Join-Path ([IO.Path]::GetTempPath()) ('wcc-test-' + [guid]::NewGuid())
 try {
     $env:LOCALAPPDATA = Join-Path $root 'Local'
@@ -49,5 +61,5 @@ try {
     $result = Measure-Directory $temp
     Assert ($result.Count -eq 1) 'Traversal followed directory link'
     Assert (-not (Test-SafeCachePath (Join-Path $temp 'linked'))) 'Linked target accepted'
-    'PASS: browser detection, read-only scan, running-browser guard, cache removal, cookies/saves/fresh-file preservation, age filter, symlink exclusion'
+    'PASS: explicit Y/y confirmation, default cancellation, browser detection, read-only scan, running-browser guard, cache removal, cookies/saves/fresh-file preservation, age filter, symlink exclusion'
 } finally { Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue }
