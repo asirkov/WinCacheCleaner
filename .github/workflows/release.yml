@@ -39,15 +39,39 @@ jobs:
         shell: powershell
         run: ./.github/scripts/Validate.ps1
 
+  package:
+    name: Build and test Windows CMD
+    needs: validate
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build standalone CMD and ZIP
+        shell: pwsh
+        run: ./.github/scripts/Build-Release.ps1
+      - name: Test release payload and actual Windows CMD launch
+        shell: pwsh
+        run: ./tests/Release.Tests.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-package
+          path: dist/
+          if-no-files-found: error
+          retention-days: 7
+
   release:
     name: Publish versioned release
-    needs: validate
+    needs: [validate, package]
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-package
+          path: dist
       - name: Create release if this version is new
         env:
           GH_TOKEN: ${{ github.token }}
@@ -64,13 +88,10 @@ jobs:
             status=$?
             if [ "$status" -ne 2 ]; then exit "$status"; fi
           fi
-          mkdir -p dist
-          cp WinCacheCleaner.ps1 README.md LICENSE CHANGELOG.md VERSION dist/
-          (cd dist && sha256sum WinCacheCleaner.ps1 > SHA256SUMS.txt)
-          (cd dist && zip -q "../WinCacheCleaner-${tag}.zip" WinCacheCleaner.ps1 README.md LICENSE CHANGELOG.md VERSION SHA256SUMS.txt)
+          (cd dist && sha256sum --check SHA256SUMS.txt)
           gh release create "$tag" \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
             --title "WinCacheCleaner ${tag}" \
-            --generate-notes \
-            dist/WinCacheCleaner.ps1 dist/SHA256SUMS.txt "WinCacheCleaner-${tag}.zip"
+            --notes-file dist/RELEASE_NOTES.md \
+            dist/WinCacheCleaner.cmd dist/WinCacheCleaner.ps1 dist/SHA256SUMS.txt "dist/WinCacheCleaner-${tag}.zip"

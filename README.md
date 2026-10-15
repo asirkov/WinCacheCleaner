@@ -8,6 +8,18 @@ powershell.exe -NoProfile -File .\WinCacheCleaner.ps1 -AnalyzeOnly
 powershell.exe -NoProfile -File .\WinCacheCleaner.ps1
 ```
 
+If Windows reports that running scripts is disabled, after reviewing/trusting the
+downloaded script you can allow it for this process only:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\WinCacheCleaner.ps1" -AnalyzeOnly
+```
+
+Omit `-AnalyzeOnly` to open cleanup. `-ExecutionPolicy Bypass` here does not change
+the saved user/machine policy; organizational Group Policy can still override it.
+There is no need to set a permanent `Unrestricted` policy. The standalone CMD
+runs the embedded source in memory rather than loading a PS1 file.
+
 Use arrows to navigate, Space to select, Enter to continue, Esc to return.
 Scan-only mode does not delete files or export reports. Normal cleanup requires
 `CLEAN` after a preview. Administrator rights are needed only for protected
@@ -56,7 +68,7 @@ registry/AppX, Windows file-locking or interactive terminal compatibility.
 
 ## Versions and branches
 
-Current version: **0.3.0**. Display it with:
+Current version: **0.3.1**. Display it with:
 
 ```powershell
 powershell.exe -NoProfile -File .\WinCacheCleaner.ps1 -Version
@@ -64,14 +76,39 @@ powershell.exe -NoProfile -File .\WinCacheCleaner.ps1 -Version
 
 Use `develop` for subsequent changes and merge reviewed changes into `main`.
 Before a new release, increment `VERSION` and `$script:AppVersion` in the script
-using MAJOR.MINOR.PATCH and update `CHANGELOG.md`. Keep the header version aligned.
+using MAJOR.MINOR.PATCH and write a user-facing Ukrainian entry under `## <VERSION>` in `CHANGELOG.md`.
+The release body uses only that entry; describe behavior, usage and limitations
+in plain language instead of listing commits. Keep the header version aligned.
 The standalone script includes its version; it needs no external version file at runtime.
 
 GitHub Actions validates syntax, version consistency and safety fixtures on Linux
 PowerShell 7, Windows PowerShell 7 and Windows PowerShell 5.1. After successful
 checks on `main`, it automatically creates `v<VERSION>` on the exact tested commit
-and publishes the script, SHA256 checksum and a ZIP with documentation/license.
+and publishes the standalone CMD, script, SHA256 checksums and a ZIP with documentation/license.
 An existing version/tag is left untouched; bump the version for another release.
-`develop` and pull requests run validation without publishing. The workflow can
+`develop` and pull requests run source validation only, without building release packages or publishing. The workflow can
 also be rerun manually from `main`. GitHub Actions must be enabled with permission
 for the release job to write repository contents.
+
+## Standalone Windows download
+
+Download `WinCacheCleaner.cmd` from a release and double-click it. It contains the
+complete script and requires only built-in Windows PowerShell 5.1; no installer
+or separate PS1 file is needed. It decodes the script in memory, preserves the
+interactive confirmations, and does not change execution policy or elevate itself.
+If your organization blocks PowerShell, its policy still applies.
+
+```cmd
+WinCacheCleaner.cmd -AnalyzeOnly
+WinCacheCleaner.cmd -Version
+```
+
+Build and test the release package manually with PowerShell:
+
+```powershell
+pwsh -NoProfile -File .\.github\scripts\Build-Release.ps1
+pwsh -NoProfile -File .\tests\Release.Tests.ps1
+```
+
+The main-branch packaging job builds on Windows and tests the actual CMD launch
+with `-Version`, including a path containing spaces, before release publication.
