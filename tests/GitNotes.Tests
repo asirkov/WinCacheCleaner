@@ -11,16 +11,23 @@ git config user.name 'Release notes test'
 git config user.email 'release-test@example.invalid'
 printf '0.3.2\n' > VERSION
 git add VERSION
-git commit -qm 'Initial fixture'
+git commit -qm 'chore: create initial fixture'
 notes=$(bash ci/git-notes)
-[[ $notes == *'Initial fixture'* && $notes == *'Історія першого релізу'* ]]
+[[ $notes == *'initial fixture'* && $notes == *'First release history'* ]]
 git tag v0.3.1
+empty_notes=$(bash ci/git-notes)
+[[ $empty_notes == *'No new commits since the previous release.'* && $empty_notes == *'Full changelog'* ]]
 printf 'fixture\n' > feature
 git add feature
 git commit -qm 'feat: Launch from one CMD file'
 notes=$(bash ci/git-notes)
-[[ $notes == *'Launch from one CMD file'* && $notes != *'Initial fixture'* && $notes == *'compare/v0.3.1...v0.3.2'* ]]
+[[ $notes == *'Launch from one CMD file'* && $notes != *'initial fixture'* && $notes == *'compare/v0.3.1...v0.3.2'* ]]
 git tag v0.3.2
 notes_after_tag=$(bash ci/git-notes)
 [[ $notes_after_tag == "$notes" ]]
-printf 'PASS: first-release notes, previous-tag range, current-tag rerun\n'
+printf 'later change\n' > later
+git add later
+git commit -qm 'fix: make a later change'
+released_notes=$(RELEASE_COMMIT=v0.3.2 bash ci/git-notes)
+[[ $released_notes == "$notes" && $released_notes != *'later change'* ]]
+printf 'PASS: English labels, empty range, previous-tag range, current-tag rerun, released-commit notes\n'

@@ -10,7 +10,12 @@ fi
 : "${GITHUB_SHA:?Missing GITHUB_SHA}"
 tag="v${version}"
 if git ls-remote --exit-code --tags origin "refs/tags/${tag}" >/dev/null; then
-  echo "${tag} already exists; bump VERSION and AppVersion for the next release."
+  # Correct release text using the released commit, not later branch changes.
+  notes_file=$(mktemp)
+  trap 'rm -f -- "$notes_file"' EXIT
+  RELEASE_COMMIT="$tag" bash "$repo_root/ci/git-notes" > "$notes_file"
+  gh release edit "$tag" --repo "$GITHUB_REPOSITORY" --notes-file "$notes_file"
+  echo "Updated ${tag} release notes from its tagged commit."
   exit 0
 else
   status=$?

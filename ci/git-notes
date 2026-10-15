@@ -20,11 +20,11 @@ done <<< "$tags"
 range=$target
 if [[ -n $previous_tag ]]; then range="${previous_tag}..${target}"; fi
 repo_url="${GITHUB_SERVER_URL:-https://github.com}/${GITHUB_REPOSITORY:-asirkov/WinCacheCleaner}"
-printf '## Зміни у %s\n\n' "$current_tag"
+printf '## Changes in %s\n\n' "$current_tag"
 commits=$(git log --no-merges --reverse --format="- %s ([%h](${repo_url}/commit/%H))" "$range")
-if [[ -n $commits ]]; then printf '%s\n' "$commits"; else printf 'Нових коммітів після попереднього релізу немає.\n'; fi
+if [[ -n $commits ]]; then printf '%s\n' "$commits"; else printf 'No new commits since the previous release.\n'; fi
 if [[ -n $previous_tag ]]; then
-  printf '\n[Повний перелік змін](%s/compare/%s...%s)\n' "$repo_url" "$previous_tag" "$current_tag"
+  printf '\n[Full changelog](%s/compare/%s...%s)\n' "$repo_url" "$previous_tag" "$current_tag"
 else
-  printf '\n[Історія першого релізу](%s/commits/%s)\n' "$repo_url" "$current_tag"
+  printf '\n[First release history](%s/commits/%s)\n' "$repo_url" "$current_tag"
 fi

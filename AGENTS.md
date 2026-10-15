@@ -12,7 +12,7 @@ explicit user request; use exact `--force-with-lease` expectations when authoriz
 ## Commit messages
 
 Every new commit must follow [Conventional Commits 1.0.0](https://www.conventionalcommits.org/en/v1.0.0/).
-Write the subject, body and footers in English. Use this format:
+Write the subject, body and footers in English. Release-note headings and link labels must also be in English. Use this format:
 
 ```text
 <type>[optional scope][!]: <short description>
@@ -89,5 +89,6 @@ versions: fixes increment PATCH, features MINOR, incompatible changes MAJOR.
 Do not bump a version just to edit documentation or rerun an existing workflow.
 Main-only packaging validates real CMD startup on Windows before publishing.
 Keep full Git history and tags for release notes. Never overwrite release tags or
-assets. A successful local build or push does not prove Actions or publication
+assets. Release descriptions may be corrected using the tagged commit, excluding
+later branch changes. A successful local build or push does not prove Actions or publication
 completed.

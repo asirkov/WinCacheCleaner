@@ -87,7 +87,9 @@ GitHub Actions validates syntax, version consistency and safety fixtures on Linu
 PowerShell 7, Windows PowerShell 7 and Windows PowerShell 5.1. After successful
 checks on `main`, it automatically creates `v<VERSION>` on the exact tested commit
 and publishes the standalone CMD, script, SHA256 checksums and a ZIP with documentation/license.
-An existing version/tag is left untouched; bump the version for another release.
+Existing release tags and assets are preserved; bump the version for another release.
+For an existing release, Actions refreshes only its notes from the tagged commit,
+using English headings and link labels.
 `develop` and pull requests run source validation only, without building release packages or publishing. The workflow can
 also be rerun manually from `main`. GitHub Actions must be enabled with permission
 for the release job to write repository contents.
