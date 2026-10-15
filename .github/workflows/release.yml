@@ -4,6 +4,8 @@ run-name: Validate and release (${{ github.ref_name }}, ${{ github.event_name }}
 on:
   push:
     branches: [main, develop]
+  pull_request:
+    branches: [develop]
 
 permissions:
   contents: read
@@ -27,7 +29,7 @@ jobs:
       - name: Validate commit messages
         shell: bash
         env:
-          COMMITLINT_HEAD: ${{ github.sha }}
+          COMMITLINT_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
         run: ./ci/check-commits
 
   validate:
@@ -54,7 +56,9 @@ jobs:
   package:
     name: Build and test Windows CMD
     needs: [commits, validate]
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    if: >-
+      (github.ref == 'refs/heads/main' && github.event_name == 'push') ||
+      (github.event_name == 'pull_request' && github.base_ref == 'develop')
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -67,6 +71,7 @@ jobs:
         shell: bash
         run: ./ci/test-package
       - uses: actions/upload-artifact@v4
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
         with:
           name: release-package
           path: dist/
