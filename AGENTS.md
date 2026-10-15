@@ -44,6 +44,16 @@ rule and is the CI baseline. All subsequent commits are checked, including merge
 commits. Do not move the baseline to bypass a failure. Release notes come from Git
 subjects, so describe the concrete change; do not add a separate changelog.
 
+## Pull requests
+
+Use `.github/pull_request_template.md` for PR descriptions. Fill in the summary,
+breaking changes, documentation changes, and manual changes sections; write
+`None` where there are no relevant changes. Mark manual-operation checkboxes
+`[x]` only for steps the agent has already completed in the current PR. Leave
+`[ ]` for incomplete work, steps requiring manual action, or work deferred to
+future features, and describe what remains. For inapplicable checklist items,
+leave `[ ]` and append `N/A` with a short reason instead of marking them complete.
+
 ## Implementation and safety
 
 The application supports Windows PowerShell 5.1+ and has no runtime dependencies.
