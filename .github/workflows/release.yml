@@ -1,4 +1,5 @@
 name: Validate and release
+run-name: Validate and release (${{ github.ref_name }}, ${{ github.event_name }})
 
 on:
   push:
