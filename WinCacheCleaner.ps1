@@ -1,6 +1,6 @@
 ﻿#requires -Version 5.1
 <#
-WinCacheCleaner v0.3.3
+WinCacheCleaner v0.4.0
 Run in Windows Terminal / PowerShell (preferably as Administrator).
 Space toggles a choice, Enter starts, Esc goes back.
 AppData audit is report-only. GPU/game caches are reviewed individually before cleanup.
@@ -8,7 +8,7 @@ AppData audit is report-only. GPU/game caches are reviewed individually before c
 
 param([switch]$AnalyzeOnly, [switch]$Version, [ValidateRange(1, 86400)][int]$ScanTimeoutSeconds = 120)
 
-$script:AppVersion = '0.3.3'
+$script:AppVersion = '0.4.0'
 
 $ErrorActionPreference = 'Stop'
 $MinimumAgeDays = 7

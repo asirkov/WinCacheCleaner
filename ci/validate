@@ -23,3 +23,5 @@ PS
 "$powershell_runner" -NoLogo -NoProfile -NonInteractive -File "$repo_root/tests/Safety.Tests.ps1"
 "$powershell_runner" -NoLogo -NoProfile -NonInteractive -File "$repo_root/tests/Scan.Tests.ps1"
 bash "$repo_root/tests/GitNotes.Tests"
+
+bash "$repo_root/tests/Publish.Tests"

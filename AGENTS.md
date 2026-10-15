@@ -3,9 +3,9 @@
 ## Repository and branches
 
 Use the existing checkout. Cloud tasks are isolated; do not create Git worktrees
-unless the user explicitly requests one. Make changes on `develop`. Merge into
-`main` when the user requests publication or when continuing an already authorized
-release task. Never build or publish releases automatically from `develop`.
+unless the user explicitly requests one. Make changes on `develop`. For an authorized release, promote in this order:
+`develop -> release-<VERSION> -> main -> develop`. Use a Conventional Commit
+message for the release merge into `main`, then sync `develop` from `main`. Never build or publish releases automatically from `develop`.
 Preserve unrelated user changes. Do not rewrite published history without an
 explicit user request; use exact `--force-with-lease` expectations when authorized.
 
@@ -88,7 +88,11 @@ Keep `VERSION`, `$script:AppVersion`, and the script header aligned. Use semanti
 versions: fixes increment PATCH, features MINOR, incompatible changes MAJOR.
 Do not bump a version just to edit documentation or rerun an existing workflow.
 Main-only packaging validates real CMD startup on Windows before publishing.
-Keep full Git history and tags for release notes. Never overwrite release tags or
-assets. Release descriptions may be corrected using the tagged commit, excluding
+Keep full Git history and tags for release notes. Never move versioned release tags or replace their assets. Release descriptions may be corrected using the tagged commit, excluding
 later branch changes. A successful local build or push does not prove Actions or publication
 completed.
+
+## Requested follow-up
+
+For version 0.4.1, add support for the `latest` tag. This is a separate task and
+is not implemented in 0.4.0.

@@ -6,7 +6,14 @@ output_directory=${1:-"$repo_root/dist"}
 mkdir -p -- "$output_directory"
 output_directory=$(cd -- "$output_directory" && pwd)
 files=(WinCacheCleaner.ps1 README.md LICENSE VERSION)
-for file in "${files[@]}"; do cp -- "$file" "$output_directory/$file"; done
+release_target=HEAD
+if [[ ${GITHUB_REF:-} == refs/heads/main ]] && git show-ref --verify --quiet "refs/tags/v${version}"; then
+  release_target="refs/tags/v${version}"
+  for file in "${files[@]}"; do git show "${release_target}:${file}" > "$output_directory/$file"; done
+  echo "Building assets from existing tag v${version}."
+else
+  for file in "${files[@]}"; do cp -- "$file" "$output_directory/$file"; done
+fi
 # A standalone CMD: exact source embedded as base64, decoded only in memory.
 {
   cat <<'CMD'
@@ -20,10 +27,10 @@ if not defined WCC_MODE pause
 exit /b %WCC_EXIT%
 ::WCC_PAYLOAD
 CMD
-  base64 < WinCacheCleaner.ps1 | tr -d '\r\n'
+  base64 < "$output_directory/WinCacheCleaner.ps1" | tr -d '\r\n'
   printf '\n'
 } | sed 's/$/\r/' > "$output_directory/WinCacheCleaner.cmd"
-bash "$repo_root/ci/git-notes" > "$output_directory/RELEASE_NOTES.md"
+RELEASE_COMMIT="$release_target" bash "$repo_root/ci/git-notes" > "$output_directory/RELEASE_NOTES.md"
 files+=(WinCacheCleaner.cmd RELEASE_NOTES.md)
 (cd -- "$output_directory" && sha256sum --binary "${files[@]}" > SHA256SUMS.txt)
 # PowerShell provides ZIP creation on both Linux and Windows Git Bash runners.
