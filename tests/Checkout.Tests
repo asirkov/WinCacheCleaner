@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+set -euo pipefail
+project_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+fixture=$(mktemp -d)
+trap 'rm -rf -- "$fixture"' EXIT
+mkdir -p "$fixture/source"
+files=(WinCacheCleaner.ps1 README.md LICENSE VERSION)
+# Use committed bytes, with the current attributes so the fix can be tested before commit.
+for file in "${files[@]}"; do
+  git -C "$project_root" show "HEAD:$file" > "$fixture/source/$file"
+done
+cp -- "$project_root/.gitattributes" "$fixture/source/.gitattributes"
+git -C "$fixture/source" init -q
+git -C "$fixture/source" -c core.autocrlf=false add .gitattributes "${files[@]}"
+git -C "$fixture/source" -c user.name='Checkout test' -c user.email='checkout-test@example.invalid' \
+  -c commit.gpgsign=false commit -qm 'test: create checkout fixture'
+# Reproduce Windows checkout conversion even when this test runs on Linux.
+git -c core.autocrlf=true -c core.eol=crlf clone --quiet --no-local \
+  "$fixture/source" "$fixture/windows"
+for file in "${files[@]}"; do
+  if ! git -C "$fixture/source" show "HEAD:$file" | cmp - "$fixture/windows/$file"; then
+    printf 'Release source differs from Git after Windows checkout: %s\n' "$file" >&2
+    exit 1
+  fi
+done
+printf 'PASS: Windows checkout preserves exact Git bytes for all packaged sources\n'
