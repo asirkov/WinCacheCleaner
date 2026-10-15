@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+# Promote a successfully published version without moving latest backwards.
+set -euo pipefail
+source "$(dirname -- "${BASH_SOURCE[0]}")/common"
+if [[ ${GITHUB_REF:-} != refs/heads/main || ${GITHUB_EVENT_NAME:-} != push ]]; then
+  echo 'Latest promotion is permitted only for main pushes.' >&2
+  exit 1
+fi
+: "${GITHUB_REPOSITORY:?Missing GITHUB_REPOSITORY}"
+: "${1:?Missing published commit}"
+target_commit=$(git rev-parse --verify "${1}^{commit}")
+version_tag="v${version}"
+# Verify that GitHub actually published the version tag before creating the alias.
+version_refs=$(git ls-remote --tags origin "refs/tags/${version_tag}")
+version_oid=$(awk -v ref="refs/tags/${version_tag}" '$2 == ref {print $1}' <<< "$version_refs")
+if [[ -z $version_oid ]]; then echo "Missing published tag ${version_tag}" >&2; exit 1; fi
+if ! git cat-file -e "$version_oid" 2>/dev/null; then git fetch --no-tags origin "$version_oid"; fi
+published_commit=$(git rev-parse --verify "${version_oid}^{commit}")
+if [[ $published_commit != "$target_commit" ]]; then
+  echo 'Published version tag differs from the requested latest commit.' >&2
+  exit 1
+fi
+latest_refs=$(git ls-remote --tags origin refs/tags/latest)
+expected_oid=$(awk '$2 == "refs/tags/latest" {print $1}' <<< "$latest_refs")
+needs_push=true
+if [[ -n $expected_oid ]]; then
+  if ! git cat-file -e "$expected_oid" 2>/dev/null; then git fetch --no-tags origin "$expected_oid"; fi
+  latest_commit=$(git rev-parse --verify "${expected_oid}^{commit}")
+  if [[ $latest_commit == "$target_commit" ]]; then
+    needs_push=false
+  elif git merge-base --is-ancestor "$target_commit" "$latest_commit"; then
+    echo "Keeping newer latest commit; not promoting ${version_tag}."
+    exit 0
+  elif ! git merge-base --is-ancestor "$latest_commit" "$target_commit"; then
+    echo 'Latest and the release have unrelated histories; refusing automatic promotion.' >&2
+    exit 1
+  fi
+fi
+if [[ $needs_push == true ]]; then
+  # Exact remote-object lease also handles an annotated previous alias.
+  # Empty expected_oid requires that latest still does not exist.
+  git push --force-with-lease="refs/tags/latest:${expected_oid}" origin "${target_commit}:refs/tags/latest"
+fi
+# Idempotent: retry repairs the GitHub marker if a previous API call failed.
+gh release edit "$version_tag" --repo "$GITHUB_REPOSITORY" --latest
+echo "Latest points to ${version_tag} (${target_commit})."

@@ -1,6 +1,6 @@
 ﻿#requires -Version 5.1
 <#
-WinCacheCleaner v0.4.0
+WinCacheCleaner v1.0.0
 Run in Windows Terminal / PowerShell (preferably as Administrator).
 Space toggles a choice, Enter starts, Esc goes back.
 AppData audit is report-only. GPU/game caches are reviewed individually before cleanup.
@@ -8,11 +8,15 @@ AppData audit is report-only. GPU/game caches are reviewed individually before c
 
 param([switch]$AnalyzeOnly, [switch]$Version, [ValidateRange(1, 86400)][int]$ScanTimeoutSeconds = 120)
 
-$script:AppVersion = '0.4.0'
+$script:AppVersion = '1.0.0'
 
 $ErrorActionPreference = 'Stop'
 $MinimumAgeDays = 7
 $WERMinimumAgeDays = 14
+
+function Confirm-Action([string]$Prompt) {
+    return (Read-Host "$Prompt [y/N]") -ieq 'y'
+}
 
 function Format-Size([long]$Bytes) {
     if ($Bytes -lt 0) { return ('-{0}' -f (Format-Size ([long](-$Bytes)))) }
@@ -626,7 +630,7 @@ try {
         if ($cancelled) { continue }
         if ($selected -contains 'leftovers') {
             Write-Host 'No installed-app match is NOT proof of an uninstall. Portable/shared caches may still be used.' -ForegroundColor Yellow
-            if ((Read-Host 'Type LEFTOVERS to accept these manually reviewed cache paths') -cne 'LEFTOVERS') { continue }
+            if (-not (Confirm-Action 'Accept these manually reviewed cache paths?')) { continue }
         }
         $writes = @($selected | Where-Object { $_ -ne 'appdata' })
         if ($writes.Count -gt 0) {
@@ -653,8 +657,7 @@ try {
             if ($writes -contains 'recycle') { Write-Host 'Recycle Bin deletion is permanent.' -ForegroundColor Yellow }
             if ($writes -contains 'hibernation') { Write-Host 'Hibernate, hybrid sleep, and Fast Startup will be disabled.' -ForegroundColor Yellow }
             Write-Host ''
-            $confirmation = Read-Host 'Type CLEAN to execute (anything else cancels)'
-            if ($confirmation -cne 'CLEAN') {
+            if (-not (Confirm-Action 'Execute the selected actions?')) {
                 Write-Host 'Cancelled; no changes made.'
                 [void](Read-Host 'Press Enter to continue')
                 continue

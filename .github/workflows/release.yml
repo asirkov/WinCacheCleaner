@@ -3,10 +3,9 @@ run-name: Validate and release (${{ github.ref_name }}, ${{ github.event_name }}
 
 on:
   push:
-    branches: [main, develop, 'release-*']
-  pull_request:
     branches: [main, develop]
-  workflow_dispatch:
+  pull_request:
+    branches: [develop]
 
 permissions:
   contents: read
@@ -57,7 +56,9 @@ jobs:
   package:
     name: Build and test Windows CMD
     needs: [commits, validate]
-    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    if: >-
+      (github.ref == 'refs/heads/main' && github.event_name == 'push') ||
+      (github.event_name == 'pull_request' && github.base_ref == 'develop')
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -70,6 +71,7 @@ jobs:
         shell: bash
         run: ./ci/test-package
       - uses: actions/upload-artifact@v4
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
         with:
           name: release-package
           path: dist/
@@ -79,7 +81,7 @@ jobs:
   release:
     name: Publish versioned release
     needs: [commits, validate, package]
-    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
       contents: write

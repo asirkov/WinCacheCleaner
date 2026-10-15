@@ -1,4 +1,4 @@
-# Main-branch packaging check. Never starts the interactive cleaner.
+# Package verification for develop PRs and main releases. Never starts the interactive cleaner.
 param([string]$OutputDirectory = (Join-Path $PSScriptRoot '../dist'))
 $ErrorActionPreference = 'Stop'
 $repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
@@ -46,7 +46,7 @@ try {
         $global:LASTEXITCODE = 0
         Write-Host 'PASS: real Windows CMD launch and invalid-switch exit status'
     } else {
-        Write-Host 'Windows CMD execution unrun on this platform; covered by the main-branch Windows packaging job.'
+        Write-Host 'Windows CMD execution unrun on this platform; covered by the Windows packaging job.'
     }
     Write-Host 'PASS: exact embedded source, embedded version, checksums and ZIP contents'
 } finally { Remove-Item -LiteralPath $unpack -Recurse -Force -ErrorAction SilentlyContinue }

@@ -1,122 +1,82 @@
 # WinCacheCleaner
 
-Interactive Windows 10/11 cleaner, PowerShell 5.1+, no runtime dependencies.
-Run from the directory containing the script:
+Interactive cache cleaner for **Windows 10/11**. Runs on PowerShell 5.1+ with no
+installer or runtime dependencies.
 
-```powershell
-powershell.exe -NoProfile -File .\WinCacheCleaner.ps1 -AnalyzeOnly
-powershell.exe -NoProfile -File .\WinCacheCleaner.ps1
-```
+**[Download WinCacheCleaner.cmd](https://github.com/asirkov/WinCacheCleaner/releases/latest/download/WinCacheCleaner.cmd)**
+· [All releases](https://github.com/asirkov/WinCacheCleaner/releases)
+· [MIT license](LICENSE)
 
-If Windows reports that running scripts is disabled, after reviewing/trusting the
-downloaded script you can allow it for this process only:
+## Quick start
 
-```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\WinCacheCleaner.ps1" -AnalyzeOnly
-```
+Download the standalone CMD above and double-click it. The launcher includes the
+complete script and uses built-in Windows PowerShell.
 
-Omit `-AnalyzeOnly` to open cleanup. `-ExecutionPolicy Bypass` here does not change
-the saved user/machine policy; organizational Group Policy can still override it.
-There is no need to set a permanent `Unrestricted` policy. The standalone CMD
-runs the embedded source in memory rather than loading a PS1 file.
-
-Use arrows to navigate, Space to select, Enter to continue, Esc to return.
-Scan-only mode does not delete files or export reports. Normal cleanup requires
-`CLEAN` after a preview. Administrator rights are needed only for protected
-system targets and disabling hibernation.
-
-- Common: TEMP files older than 7 days, WER reports older than 14 days.
-- GPU/game caches: individually selected known paths; shaders may rebuild.
-- Browser cache (off by default): Chrome/Edge Default, Profile *, Guest Profile;
-  Firefox profiles under LocalAppData. Only Cache, Code Cache, GPUCache or
-  Firefox cache2 contents. Close the browser first; running browsers are skipped.
-  Cookies, passwords, history, bookmarks and sessions are outside these targets.
-  Custom/portable browser locations are not discovered.
-- Possible leftovers (off by default): direct Cache, Code Cache, GPUCache and
-  Temp children of unmatched application folders in Local/Roaming/LocalLow
-  AppData and ProgramData. Only files older than 30 days. Uses Uninstall registry
-  names and current-user AppX names. Requires individual selection, `LEFTOVERS`,
-  then `CLEAN`. No name match is **not proof of an uninstall**; portable apps,
-  shared components and incomplete inventories make this heuristic uncertain.
-  Empty inventories produce no deletion candidates. Shared system/vendor roots
-  are excluded. Whole application folders, settings and saves are never targets.
-- AppData audit: largest folders, report only. No automatic report files.
-- Recycle Bin and hibernation: explicit optional existing operations.
-
-Candidate sizes are **logical file sizes**, not allocated disk usage. The final
-free-space delta is measured from the drive and may include unrelated activity.
-Inaccessible files may be omitted from scanning; estimates can be incomplete.
-Links/junctions are skipped. Files can change between scan and cleanup; this is
-not a snapshot. Close affected applications before cleaning. Arbitrary hostile
-filesystem changes during cleanup are outside this tool's guarantees.
-
-Windows Update/DISM, developer caches, Docker/WSL diagnostics and allocated-size
-accounting from the broader design document are not implemented in this version.
-
-## Validation
-
-```powershell
-pwsh -NoProfile -File .\tests\Safety.Tests.ps1
-```
-
-The fixture suite uses temporary data only. It checks discovery, read-only scans,
-closed-browser enforcement, age filtering, deletion of selected cache contents,
-preservation of cookies/saves/new files, and directory-link exclusion. Creating
-the test symbolic link on Windows may require Developer Mode or elevation.
-Linux PowerShell 7 validation does not establish Windows PowerShell 5.1, real
-registry/AppX, Windows file-locking or interactive terminal compatibility.
-
-## Versions and branches
-
-Current version: **0.4.0**. Display it with:
-
-```powershell
-powershell.exe -NoProfile -File .\WinCacheCleaner.ps1 -Version
-```
-
-Use `develop` for subsequent changes. Promote releases in this order:
-`develop -> release-<VERSION> -> main -> develop`. Release branches run validation;
-packaging and publication run only on `main`.
-Before a new release, increment `VERSION` and `$script:AppVersion` in the script
-using MAJOR.MINOR.PATCH. Keep the header version aligned. Write clear commit
-subjects: release notes are generated from Git commits after the previous
-ancestor version tag, with commit links and a comparison link. There is no
-separate manually maintained changelog. The first release includes all commits;
-rerunning an existing version excludes its own tag when computing the range.
-The standalone script includes its version; it needs no external version file at runtime.
-
-GitHub Actions validates syntax, version consistency and safety fixtures on Linux
-PowerShell 7, Windows PowerShell 7 and Windows PowerShell 5.1. After successful
-checks on `main`, it automatically creates `v<VERSION>` on the exact tested commit
-and publishes the standalone CMD, script, SHA256 checksums and a ZIP with documentation/license.
-Existing release tags and assets are preserved; bump the version for another release.
-An existing tag without a release is published using source/docs from that exact tag.
-For an existing release, Actions refreshes only its notes from the tagged commit,
-using English headings and link labels.
-`develop` and pull requests run source validation only, without building release packages or publishing. The workflow can
-also be rerun manually from `main`. GitHub Actions must be enabled with permission
-for the release job to write repository contents.
-
-## Standalone Windows download
-
-Download `WinCacheCleaner.cmd` from a release and double-click it. It contains the
-complete script and requires only built-in Windows PowerShell 5.1; no installer
-or separate PS1 file is needed. It decodes the script in memory, preserves the
-interactive confirmations, and does not change execution policy or elevate itself.
-If your organization blocks PowerShell, its policy still applies.
+To scan without deleting files or writing reports, run it from its directory:
 
 ```cmd
 WinCacheCleaner.cmd -AnalyzeOnly
-WinCacheCleaner.cmd -Version
 ```
 
-CI entry points are Bash scripts without extensions under `ci/`. Run from
-Bash (Git Bash on Windows); each entry point resolves the project root itself:
+Or run the source script from the repository directory:
+
+```powershell
+powershell.exe -NoProfile -File .\WinCacheCleaner.ps1 -AnalyzeOnly
+```
+
+Omit `-AnalyzeOnly` to open cleanup. If Windows blocks the PS1, review and trust
+the script before adding `-ExecutionPolicy Bypass` before `-File`. This applies
+only to that process; organizational policies still apply.
+
+Use **arrows** to navigate, **Space** to select, **Enter** to continue and **Esc**
+to go back. Cleanup shows a preview and requires **Y** or **y** at the `[y/N]`
+prompt; Enter or any other input cancels.
+
+## What it does
+
+| Target | Behavior |
+| --- | --- |
+| Temporary files | TEMP files older than 7 days; Windows error reports older than 14 days. |
+| GPU and game caches | Known paths, reviewed individually. Shaders may rebuild afterward. |
+| Browser caches | Standard Chrome, Edge and Firefox profile caches. Off by default; running browsers are skipped. |
+| Possible leftovers | Cache files older than 30 days in unmatched app folders. Off by default; paths require individual selection and an extra confirmation. |
+| AppData audit | Lists the largest folders on screen; no deletion or report files. |
+| System options | Empty the Recycle Bin or disable hibernation, which also disables hybrid sleep and Fast Startup. Both are optional. |
+
+## Before cleaning
+
+- Close affected applications. Browser cleanup excludes cookies, passwords,
+  history, bookmarks and sessions; custom/portable profile paths are not discovered.
+- Whole application folders, settings and saves are never cleanup targets.
+  Links and junctions are skipped.
+- An unmatched app folder is **not proof of an uninstall**. Review possible
+  leftovers carefully; portable apps and shared components may still use them.
+- Administrator rights are needed only for protected system targets and disabling
+  hibernation. Emptying the Recycle Bin permanently deletes its contents.
+- Sizes are logical file sizes, not allocated disk usage. Inaccessible or locked
+  files are skipped; actual space recovered can differ from the estimate.
+
+GPU/game scans show progress and stop after **120 seconds per target**. Press
+**Esc** during a scan to skip that target; partial results are excluded from cleanup.
+The timer and Esc are checked between filesystem operations, so a blocked OS call
+can delay them. Use these options with either the CMD launcher or PS1 script:
+
+| Option | Purpose |
+| --- | --- |
+| `-AnalyzeOnly` | Scan without deleting files or writing reports. |
+| `-ScanTimeoutSeconds 600` | Allow up to 10 minutes per GPU/game target on slower disks. |
+| `-Version` | Print the application version. |
+
+## Development
+
+See [AGENTS.md](AGENTS.md) for contribution and release rules. Create a feature
+branch from `develop` and open a PR back into `develop`.
+
+Run checks with Bash/Git Bash, PowerShell 7 and Node.js 20+:
 
 ```bash
+./ci/check-commits
 ./ci/validate
-./ci/build
-./ci/test-package
 ```
 
 Requirements: Bash, Git with full history/tags, base64, sed, sha256sum and PowerShell.
@@ -126,8 +86,15 @@ and create ZIP files; no separate PowerShell CI helper scripts are required.
 `ci/git-notes` prints generated notes. `ci/release` publishes only in a main-branch
 GitHub Actions context. Actions uses `fetch-depth: 0` for notes generation.
 
-The main-branch packaging job builds on Windows and tests the actual CMD launch
-with `-Version`, including a path containing spaces, before release publication.
+Pull requests targeting `develop` run source validation and tests on Linux
+PowerShell 7, Windows PowerShell 7 and Windows PowerShell 5.1. After these checks,
+the Windows packaging job builds the CMD/ZIP and tests the actual CMD launch with
+`-Version`, including a path containing spaces. PRs do not upload release artifacts
+or publish releases. Pushes to `develop` run source validation only; pushes to
+`main` also package and publish releases.
+
+CI packages use exact Git blob bytes so Windows CRLF conversion cannot change
+release assets or their checksums.
 
 ## Contribution rules
 
@@ -137,7 +104,8 @@ for example `fix(browser): preserve profile settings` or `ci: validate release p
 Run `./ci/check-commits` before pushing. It installs pinned development-only
 commitlint tools with `npm ci` (Node.js 20+) and checks commits after the documented
 adoption baseline, including explicit merges. Existing released history is retained.
-CI checks PR branch commits instead of GitHub's synthetic merge commit.
+CI checks all new commits on the pushed `main` or `develop` branch. For pull
+requests, it checks branch commits instead of GitHub's synthetic merge commit.
 
 GPU/game scans show file counts, logical bytes and elapsed time. Press Esc to
 skip the current GPU/game target; skipped targets are excluded from cleanup.
@@ -147,4 +115,37 @@ Scanning reads metadata, not file contents. The timer/Esc check runs between
 filesystem operations; it cannot interrupt a single blocked OS call. Ctrl+C
 stops the scan, before any cleanup confirmation.
 
-Planned for 0.4.1: support a `latest` tag. This is separate from the 0.4.0 release.
+## Latest release
+
+After a successful main-branch publication, the movable Git tag `latest` points
+to the exact commit of `v<VERSION>`, and that GitHub release is marked Latest.
+Version tags and existing assets stay immutable. Older-release reruns cannot
+move the alias backwards; concurrent tag changes are protected by an exact
+`--force-with-lease`. Failed publication does not promote the alias.
+If the GitHub marker update fails after the tag push, rerunning repairs it.
+
+Download the standalone launcher from the latest GitHub release:
+[WinCacheCleaner.cmd](https://github.com/asirkov/WinCacheCleaner/releases/latest/download/WinCacheCleaner.cmd).
+`latest` is a Git alias, not a separate release with duplicate assets.
+
+## Codex workflow skills
+
+[development](.agents/skills/development/SKILL.md) documents feature branches,
+local checks and PRs into develop. [release](.agents/skills/release/SKILL.md) is
+manual-only; invoke `$release MAJOR.MINOR.PATCH` when ready to start a release. It does not activate from release/version mentions.
+
+The release script skips the version PR when develop already has the requested
+version. If develop has a lower version, it creates a version PR into develop for
+normal review; a higher version blocks a downgrade. README stays unversioned.
+After version readiness and successful develop CI, it creates
+a release-branch PR into main with auto-merge, then a main-to-develop PR with
+auto-merge. It checks actual merges, CI, publication, assets and latest promotion.
+
+```bash
+.agents/skills/release/scripts/release run MAJOR.MINOR.PATCH
+```
+
+Repeat to resume. Exit 20 means a pending review, merge, CI or publication; other
+nonzero statuses indicate a blocker. The script never overrides protection or
+creates releases/tags outside Actions. GitHub API access and repository auto-merge
+settings are prerequisites. All helper scripts are extensionless Bash files.

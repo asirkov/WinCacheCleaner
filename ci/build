@@ -7,13 +7,23 @@ mkdir -p -- "$output_directory"
 output_directory=$(cd -- "$output_directory" && pwd)
 files=(WinCacheCleaner.ps1 README.md LICENSE VERSION)
 release_target=HEAD
+canonical_source=false
 if [[ ${GITHUB_REF:-} == refs/heads/main ]] && git show-ref --verify --quiet "refs/tags/v${version}"; then
   release_target="refs/tags/v${version}"
-  for file in "${files[@]}"; do git show "${release_target}:${file}" > "$output_directory/$file"; done
+  canonical_source=true
   echo "Building assets from existing tag v${version}."
-else
-  for file in "${files[@]}"; do cp -- "$file" "$output_directory/$file"; done
+elif [[ ${GITHUB_ACTIONS:-} == true ]]; then
+  release_target=${GITHUB_SHA:?Missing GITHUB_SHA}
+  canonical_source=true
 fi
+for file in "${files[@]}"; do
+  if [[ $canonical_source == true ]]; then
+    # Git blob bytes are independent of Windows checkout CRLF conversion.
+    git show "${release_target}:${file}" > "$output_directory/$file"
+  else
+    cp -- "$file" "$output_directory/$file"
+  fi
+done
 # A standalone CMD: exact source embedded as base64, decoded only in memory.
 {
   cat <<'CMD'
