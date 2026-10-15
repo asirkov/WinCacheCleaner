@@ -19,7 +19,7 @@ WinCacheCleaner v0.4.1
 #>
 $script:AppVersion = '0.4.1'
 PS
-printf 'Current version: **0.4.1**.\n' > README.md
+printf '# WinCacheCleaner\n\nDownload the latest release.\n' > README.md
 for check in validate build test-package check-commits; do
   printf '#!/usr/bin/env bash\nexit 0\n' > "ci/$check"
   chmod +x "ci/$check"
@@ -100,11 +100,28 @@ printf 'user work\n' > user-file
 expect_code 1 bash "$runner" prepare 0.5.0
 [[ $(cat VERSION) == 0.4.1 ]]
 rm user-file
+# A fresh, already aligned develop can go straight to the release PR.
+expect_code 0 bash "$runner" prepare 0.4.1
+[[ $(jq length "$SKILL_API/prs.json") == 0 ]]
+printf 'pending\n' > "$SKILL_API/ci"
+expect_code 20 bash "$runner" promote 0.4.1
+printf 'failure\n' > "$SKILL_API/ci"
+expect_code 1 bash "$runner" promote 0.4.1
+[[ -z $(git ls-remote origin refs/heads/release-0.4.1) ]]
+printf 'success\n' > "$SKILL_API/ci"
+expect_code 20 bash "$runner" promote 0.4.1
+[[ $(git ls-remote origin refs/heads/release-0.4.1 | cut -f1) == $(git rev-parse origin/develop) ]]
+[[ $(jq -r '.[0].baseRefName' "$SKILL_API/prs.json") == main ]]
+[[ -z $(git ls-remote origin refs/heads/chore/version-0.4.1) ]]
+# Isolate the higher-target flow from the already-versioned fixture release.
+printf '[]\n' > "$SKILL_API/prs.json"
+: > "$SKILL_API/calls"
 expect_code 20 bash "$runner" run 0.5.0
 [[ $(cat VERSION) == 0.5.0 ]]
 grep -Fq "\$script:AppVersion = '0.5.0'" WinCacheCleaner.ps1
 grep -Fq 'WinCacheCleaner v0.5.0' WinCacheCleaner.ps1
-grep -Fq '**0.5.0**' README.md
+git diff --exit-code origin/develop -- README.md
+! grep -q 'Current version:' README.md
 [[ $(head -c3 WinCacheCleaner.ps1 | od -An -tx1 | tr -d ' \n') == efbbbf ]]
 [[ $(jq length "$SKILL_API/prs.json") == 1 ]]
 ! grep -q '^pr merge' "$SKILL_API/calls"
@@ -150,10 +167,17 @@ merge_record 3 "$(git rev-parse HEAD)"
 git tag v0.5.0 "$released"
 git tag latest "$released"
 git push -q origin refs/tags/v0.5.0 refs/tags/latest
+# Resuming must accept an aligned develop even when there is no version PR.
+jq 'map(select(.headRefName != "chore/version-0.5.0"))' "$SKILL_API/prs.json" > "$SKILL_API/next"
+mv "$SKILL_API/next" "$SKILL_API/prs.json"
+expect_code 0 bash "$runner" prepare 0.5.0
+grep -q 'skipping the version PR' "$SKILL_API/output"
+expect_code 1 bash "$runner" prepare 0.4.1
+[[ $(jq length "$SKILL_API/prs.json") == 2 ]]
 expect_code 0 bash "$runner" run 0.5.0
 grep -q 'Release complete' "$SKILL_API/output"
-[[ $(jq length "$SKILL_API/prs.json") == 3 ]]
+[[ $(jq length "$SKILL_API/prs.json") == 2 ]]
 # A later moving latest tag must not make version-tag fetches clobber local tags.
 git push -q --force origin "$snapshot:refs/tags/latest"
 expect_code 20 bash "$runner" verify 0.5.0
-printf 'PASS: version PR, manual review gate, CI gate, release auto-merge, sync auto-merge, resume, publication verification, dirty/input guards\n'
+printf 'PASS: version PR, manual review gate, CI gate, release auto-merge, sync auto-merge, resume, publication verification, equal-version skip, unversioned README, downgrade/dirty/input guards\n'

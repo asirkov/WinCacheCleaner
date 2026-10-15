@@ -36,14 +36,12 @@ lookup_pr() {
   jq -c '(sort_by(.number) | reverse | map(select(.state == "OPEN")) | .[0]) // (sort_by(.number) | reverse | map(select(.state == "MERGED")) | .[0]) // null' <<< "$list"
 }
 assert_version() {
-  local ref=$1 manifest source readme
+  local ref=$1 manifest source
   manifest=$(git show "$ref:VERSION" | tr -d '\r\n')
   [[ $manifest == "$version" ]] || fail "$ref has version $manifest, expected $version"
   source=$(git show "$ref:WinCacheCleaner.ps1")
   grep -Fqx "\$script:AppVersion = '$version'" <<< "$source" || fail 'AppVersion is not aligned'
   grep -Fqx "WinCacheCleaner v$version" <<< "$source" || fail 'Header version is not aligned'
-  readme=$(git show "$ref:README.md")
-  grep -Fq "Current version: **$version**" <<< "$readme" || fail 'README version is not aligned'
 }
 fetch_branch() {
   local branch=$1 result
@@ -69,11 +67,11 @@ None
 
 ## Documentation changes
 
-$([[ $docs_check == x ]] && echo 'README version aligned with the release.' || echo 'None')
+None
 
 ## Manual changes
 
-- [$version_check] Upgrade the version, keeping \`VERSION\`, \`\$script:AppVersion\`, and the script header aligned.$([[ $version_check == ' ' ]] && echo ' N/A: already prepared by the version PR.')
+- [$version_check] Upgrade the version, keeping \`VERSION\`, \`\$script:AppVersion\`, and the script header aligned.$([[ $version_check == ' ' ]] && echo ' N/A: the target version is already prepared.')
 - [$docs_check] Update the documentation.$([[ $docs_check == ' ' ]] && echo ' N/A: no documentation changes in this integration PR.')
 - [ ] Update workflows, CI scripts, or \`AGENTS.md\` instructions. N/A: this PR does not modify them.
 
@@ -106,15 +104,21 @@ auto_merge() {
   [[ $(jq -r .state <<< "$pr") == MERGED ]] || pending "Auto-merge requested: $(jq -r .url <<< "$pr")"
 }
 prepare() {
+  local current validated=false
+  current=$(git show origin/develop:VERSION | tr -d '\r\n')
+  # An already prepared develop does not need a specific historical version PR.
+  if [[ $current == "$version" ]]; then
+    assert_version origin/develop
+    echo 'Develop already has the target version; skipping the version PR.'
+    return
+  fi
+  [[ $(printf '%s\n' "$current" "$version" | LC_ALL=C sort -V | head -n1) == "$current" ]] || fail 'Target version is lower than develop; refusing a downgrade.'
   pr=$(lookup_pr develop "$bump_branch")
   if [[ $pr != null ]]; then
     echo "Version PR: $(jq -r .url <<< "$pr") ($(jq -r .state <<< "$pr"))"
     [[ $(jq -r .state <<< "$pr") == MERGED ]] || pending 'Version PR requires normal review and merge; it is not auto-merged.'
     return
   fi
-  local current validated=false
-  current=$(git show origin/develop:VERSION | tr -d '\r\n')
-  [[ $current != "$version" && $(printf '%s\n' "$current" "$version" | LC_ALL=C sort -V | head -n1) == "$current" ]] || fail 'Target version must be newer than develop.'
   if fetch_branch "$bump_branch"; then
     if git show-ref --verify --quiet "refs/heads/$bump_branch"; then
       [[ $(git rev-parse "$bump_branch") == $(git rev-parse "origin/$bump_branch") ]] || fail 'Local version branch has unpublished changes; inspect it.'
@@ -126,16 +130,14 @@ prepare() {
       [[ $(git rev-parse HEAD) == $(git rev-parse origin/develop) ]] || fail 'Version branch contains unexpected changes; inspect it before bumping.'
       [[ $(grep -cE '^\$script:AppVersion = '\''[0-9]+\.[0-9]+\.[0-9]+'\''$' WinCacheCleaner.ps1) == 1 ]] || fail 'Expected exactly one AppVersion assignment'
       [[ $(grep -cE '^WinCacheCleaner v[0-9]+\.[0-9]+\.[0-9]+$' WinCacheCleaner.ps1) == 1 ]] || fail 'Expected exactly one version header'
-      [[ $(grep -cE '^Current version: \*\*[0-9]+\.[0-9]+\.[0-9]+\*\*' README.md) == 1 ]] || fail 'Expected exactly one README version'
       sed -E -i "s/^(\\\$script:AppVersion = ')[0-9]+\\.[0-9]+\\.[0-9]+(')$/\\1${version}\\2/; s/^(WinCacheCleaner v)[0-9]+\\.[0-9]+\\.[0-9]+$/\\1${version}/" WinCacheCleaner.ps1
-      sed -E -i "s/^(Current version: \\*\\*)[0-9]+\\.[0-9]+\\.[0-9]+(\\*\\*)/\\1${version}\\2/" README.md
       printf '%s\n' "$version" > VERSION
       ./ci/validate
       ./ci/build
       ./ci/test-package
       validated=true
       git diff --check
-      git add VERSION WinCacheCleaner.ps1 README.md
+      git add VERSION WinCacheCleaner.ps1
       git commit -m "chore(release): prepare version $version"
     fi
   fi
@@ -143,14 +145,17 @@ prepare() {
   if [[ $validated == false ]]; then ./ci/validate; ./ci/build; ./ci/test-package; fi
   ./ci/check-commits
   git push -u origin "$bump_branch"
-  body "Prepare version $version for the release pipeline. Local validation and packaging checks passed." x x 'Review and merge this version PR into develop before cutting the release branch.'
+  body "Prepare version $version for the release pipeline. Local validation and packaging checks passed." x ' ' 'Review and merge this version PR into develop before cutting the release branch.'
   create_pr develop "$bump_branch" "chore(release): prepare version $version"
   pending "Review and merge version PR: $(jq -r .url <<< "$pr")"
 }
 promote() {
   local version_pr snapshot
-  version_pr=$(lookup_pr develop "$bump_branch")
-  [[ $version_pr != null && $(jq -r .state <<< "$version_pr") == MERGED ]] || pending 'Version PR has not merged into develop.'
+  # Version alignment is the gate; the bump may have arrived in another PR.
+  if [[ $(git show origin/develop:VERSION | tr -d '\r\n') != "$version" ]]; then
+    version_pr=$(lookup_pr develop "$bump_branch")
+    [[ $version_pr != null && $(jq -r .state <<< "$version_pr") == MERGED ]] || pending 'Version PR has not merged into develop.'
+  fi
   assert_version origin/develop
   if fetch_branch "$release_branch"; then
     snapshot=$(git rev-parse "origin/$release_branch")

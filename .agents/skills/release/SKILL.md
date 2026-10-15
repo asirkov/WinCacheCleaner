@@ -31,22 +31,30 @@ Bash, Git, gh with repository API access, jq, sed, and the tools required by `ci
 Auto-merge and merge commits must be enabled in repository settings for the last
 two PRs; the script reports missing settings instead of changing them.
 
-1. **Version PR into develop.** Create `chore/version-<VERSION>` from current
-   `origin/develop`. Update `VERSION`, `$script:AppVersion`, the script header and
-   README version together. Run repository validation, packaging and commitlint.
+1. **Compare the target with develop.** If `origin/develop:VERSION` equals the
+   requested version, verify the script metadata agrees and skip the version PR,
+   regardless of which PR prepared it. If develop is lower, use the version PR
+   below; do not bump on the release branch. If develop is higher, stop rather
+   than downgrade.
+2. **Version PR into develop (only when develop is lower).** Create `chore/version-<VERSION>` from current
+   `origin/develop`. Update `VERSION`, `$script:AppVersion`, and the script header
+   together. Keep README unversioned; do not add, update or validate a
+   current-version field there. Run repository validation, packaging and commitlint.
    Commit `chore(release): prepare version <VERSION>`, push and create/reuse a PR
    targeting `develop`, with the actual repository PR-template sections.
    This first PR is for normal review; do not enable its auto-merge automatically.
-2. **Wait for the version PR to merge and develop CI to succeed.** A queued PR or
-   a run with no result is not a successful merge/check. Do not cut a release early.
-3. **Release PR.** Freeze `release-<VERSION>` at the validated develop commit.
+3. **Wait for version readiness and develop CI to succeed.** A queued PR or
+   a run with no result is not a successful merge/check. When the version already
+   matches, there is no version-PR review gate, but successful CI on the exact
+   develop snapshot is still required. Do not cut a release early.
+4. **Release PR.** Freeze `release-<VERSION>` at the validated develop commit.
    Open/reuse `release-<VERSION> -> main`, and request auto-merge using a merge
    commit and a Conventional Commit subject. Pin the PR head SHA. Never update an
    existing release branch silently or push change commits directly to main.
-4. **Sync PR.** Only after the release PR actually merges, open/reuse
+5. **Sync PR.** Only after the release PR actually merges, open/reuse
    `main -> develop`, and request auto-merge with a Conventional Commit merge
    subject and a pinned head SHA. This may run while main's publication job runs.
-5. **Verify completion.** Confirm the sync merged, shared Git ancestry, successful
+6. **Verify completion.** Confirm the sync merged, shared Git ancestry, successful
    main Actions on the release merge commit, the exact immutable version tag,
    published CMD/PS1/checksum/ZIP assets, the `latest` Git alias, and GitHub's Latest
    marker. Publication remains owned by `ci/release`/Actions; do not publish assets

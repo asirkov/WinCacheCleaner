@@ -132,15 +132,17 @@ Download the standalone launcher from the latest GitHub release:
 
 [development](.agents/skills/development/SKILL.md) documents feature branches,
 local checks and PRs into develop. [release](.agents/skills/release/SKILL.md) is
-manual-only; invoke `$release 0.5.0` after this skill is merged and when ready
-to start that release. It does not activate from release/version mentions.
+manual-only; invoke `$release MAJOR.MINOR.PATCH` when ready to start a release. It does not activate from release/version mentions.
 
-The release script creates a version PR into develop for normal review, then
+The release script skips the version PR when develop already has the requested
+version. If develop has a lower version, it creates a version PR into develop for
+normal review; a higher version blocks a downgrade. README stays unversioned.
+After version readiness and successful develop CI, it creates
 a release-branch PR into main with auto-merge, then a main-to-develop PR with
 auto-merge. It checks actual merges, CI, publication, assets and latest promotion.
 
 ```bash
-.agents/skills/release/scripts/release run 0.5.0
+.agents/skills/release/scripts/release run MAJOR.MINOR.PATCH
 ```
 
 Repeat to resume. Exit 20 means a pending review, merge, CI or publication; other
