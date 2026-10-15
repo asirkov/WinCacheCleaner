@@ -22,7 +22,8 @@ runs the embedded source in memory rather than loading a PS1 file.
 
 Use arrows to navigate, Space to select, Enter to continue, Esc to return.
 Scan-only mode does not delete files or export reports. Normal cleanup requires
-`CLEAN` after a preview. Administrator rights are needed only for protected
+`Y` or `y` at the `[y/N]` prompt after a preview; `N`, `n`, Enter or any other
+input cancels. Administrator rights are needed only for protected
 system targets and disabling hibernation.
 
 - Common: TEMP files older than 7 days, WER reports older than 14 days.
@@ -35,8 +36,9 @@ system targets and disabling hibernation.
 - Possible leftovers (off by default): direct Cache, Code Cache, GPUCache and
   Temp children of unmatched application folders in Local/Roaming/LocalLow
   AppData and ProgramData. Only files older than 30 days. Uses Uninstall registry
-  names and current-user AppX names. Requires individual selection, `LEFTOVERS`,
-  then `CLEAN`. No name match is **not proof of an uninstall**; portable apps,
+  names and current-user AppX names. Requires individual selection, confirmation
+  of the reviewed paths with `Y`/`y`, then final cleanup confirmation with `Y`/`y`.
+  No name match is **not proof of an uninstall**; portable apps,
   shared components and incomplete inventories make this heuristic uncertain.
   Empty inventories produce no deletion candidates. Shared system/vendor roots
   are excluded. Whole application folders, settings and saves are never targets.

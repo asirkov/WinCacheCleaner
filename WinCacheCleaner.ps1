@@ -14,6 +14,10 @@ $ErrorActionPreference = 'Stop'
 $MinimumAgeDays = 7
 $WERMinimumAgeDays = 14
 
+function Confirm-Action([string]$Prompt) {
+    return (Read-Host "$Prompt [y/N]") -ieq 'y'
+}
+
 function Format-Size([long]$Bytes) {
     if ($Bytes -lt 0) { return ('-{0}' -f (Format-Size ([long](-$Bytes)))) }
     if ($Bytes -ge 1GB) { return ('{0:N2} GB' -f ($Bytes / 1GB)) }
@@ -626,7 +630,7 @@ try {
         if ($cancelled) { continue }
         if ($selected -contains 'leftovers') {
             Write-Host 'No installed-app match is NOT proof of an uninstall. Portable/shared caches may still be used.' -ForegroundColor Yellow
-            if ((Read-Host 'Type LEFTOVERS to accept these manually reviewed cache paths') -cne 'LEFTOVERS') { continue }
+            if (-not (Confirm-Action 'Accept these manually reviewed cache paths?')) { continue }
         }
         $writes = @($selected | Where-Object { $_ -ne 'appdata' })
         if ($writes.Count -gt 0) {
@@ -653,8 +657,7 @@ try {
             if ($writes -contains 'recycle') { Write-Host 'Recycle Bin deletion is permanent.' -ForegroundColor Yellow }
             if ($writes -contains 'hibernation') { Write-Host 'Hibernate, hybrid sleep, and Fast Startup will be disabled.' -ForegroundColor Yellow }
             Write-Host ''
-            $confirmation = Read-Host 'Type CLEAN to execute (anything else cancels)'
-            if ($confirmation -cne 'CLEAN') {
+            if (-not (Confirm-Action 'Execute the selected actions?')) {
                 Write-Host 'Cancelled; no changes made.'
                 [void](Read-Host 'Press Enter to continue')
                 continue
