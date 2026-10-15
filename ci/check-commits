@@ -15,5 +15,5 @@ if ! git merge-base --is-ancestor "$from" "$to"; then
   exit 1
 fi
 npm ci --ignore-scripts --no-audit --no-fund
-# Includes explicit merges on the selected branch.
+# Includes explicit merges; PR callers select head.sha rather than synthetic merge HEAD.
 ./node_modules/.bin/commitlint --from "$from" --to "$to" --strict --verbose

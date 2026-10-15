@@ -28,10 +28,11 @@ injected Git/proxy credentials. Native Git access does not prove GitHub API acce
    feature branch and open/reuse a PR targeting `develop`. Do not merge a feature
    PR unless the user has authorized that action. Report the PR link and checks.
 
-Actions starts only on pushes to `main`/`develop`: a feature or release branch and
-its PR do not start Actions. Develop runs validation; main also packages Windows
-assets, creates/updates versioned releases and promotes `latest`. No PR or manual
-Actions triggers should be added to work around this policy.
+Actions starts on pushes to `main`/`develop` and pull requests targeting `develop`.
+PRs run validation and build/test Windows packages without uploading release
+artifacts or publishing. Develop pushes run validation; main pushes also package
+Windows assets, create/update versioned releases and promote `latest`. Feature
+and release branch pushes and manual Actions triggers do not start Actions.
 
 ## Release boundary
 

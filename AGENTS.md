@@ -14,9 +14,10 @@ version-bump PR -> `develop`, then `release-<VERSION>` -> PR into `main`
 normal review; do not auto-merge it unless the user separately requests that.
 Use merge commits and Conventional Commit subjects for release/sync ancestry.
 Never start the release skill implicitly or merely because a version is mentioned.
-Actions may start only for pushes to `main` and `develop`: no release-branch,
-pull request or workflow_dispatch triggers. Never build or publish releases
-automatically from `develop`.
+Actions starts for pushes to `main`/`develop` and pull requests targeting `develop`.
+No feature/release-branch push or workflow_dispatch triggers are used. Pull requests
+targeting `develop` build and test packages for verification only. Never publish
+releases automatically from `develop`.
 Preserve unrelated user changes. Do not rewrite published history without an
 explicit user request; use exact `--force-with-lease` expectations when authorized.
 
@@ -108,7 +109,8 @@ Windows CMD startup, PowerShell 5.1, registry/AppX or file-locking behavior.
 Keep `VERSION`, `$script:AppVersion`, and the script header aligned. Use semantic
 versions: fixes increment PATCH, features MINOR, incompatible changes MAJOR.
 Do not bump a version just to edit documentation or rerun an existing workflow.
-Main-only packaging validates real CMD startup on Windows before publishing.
+Packaging validates real CMD startup on Windows for pull requests targeting
+`develop` and before publishing from `main`.
 Keep full Git history and tags for release notes. Never move versioned release tags or replace their assets. Release descriptions may be corrected using the tagged commit, excluding
 later branch changes. A successful local build or push does not prove Actions or publication
 completed.

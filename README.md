@@ -86,9 +86,15 @@ and create ZIP files; no separate PowerShell CI helper scripts are required.
 `ci/git-notes` prints generated notes. `ci/release` publishes only in a main-branch
 GitHub Actions context. Actions uses `fetch-depth: 0` for notes generation.
 
+Pull requests targeting `develop` run source validation and tests on Linux
+PowerShell 7, Windows PowerShell 7 and Windows PowerShell 5.1. After these checks,
+the Windows packaging job builds the CMD/ZIP and tests the actual CMD launch with
+`-Version`, including a path containing spaces. PRs do not upload release artifacts
+or publish releases. Pushes to `develop` run source validation only; pushes to
+`main` also package and publish releases.
+
 CI packages use exact Git blob bytes so Windows CRLF conversion cannot change
-release assets or their checksums. The main-branch packaging job builds on Windows and tests the actual CMD launch
-with `-Version`, including a path containing spaces, before release publication.
+release assets or their checksums.
 
 ## Contribution rules
 
@@ -98,7 +104,8 @@ for example `fix(browser): preserve profile settings` or `ci: validate release p
 Run `./ci/check-commits` before pushing. It installs pinned development-only
 commitlint tools with `npm ci` (Node.js 20+) and checks commits after the documented
 adoption baseline, including explicit merges. Existing released history is retained.
-CI checks all new commits on the pushed `main` or `develop` branch.
+CI checks all new commits on the pushed `main` or `develop` branch. For pull
+requests, it checks branch commits instead of GitHub's synthetic merge commit.
 
 GPU/game scans show file counts, logical bytes and elapsed time. Press Esc to
 skip the current GPU/game target; skipped targets are excluded from cleanup.
