@@ -25,4 +25,5 @@ PS
 bash "$repo_root/tests/GitNotes.Tests"
 
 bash "$repo_root/tests/Publish.Tests"
+bash "$repo_root/tests/Latest.Tests"
 bash "$repo_root/tests/Checkout.Tests"

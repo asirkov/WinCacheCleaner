@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 source "$(dirname -- "${BASH_SOURCE[0]}")/common"
-if [[ ${GITHUB_REF:-} != refs/heads/main || ${GITHUB_EVENT_NAME:-} == pull_request ]]; then
+if [[ ${GITHUB_REF:-} != refs/heads/main || ${GITHUB_EVENT_NAME:-} != push ]]; then
   echo 'Release publication is permitted only from main outside pull requests.' >&2
   exit 1
 fi
@@ -40,6 +40,7 @@ if [[ $release_exists == true ]]; then
   fi
   gh release edit "$tag" --repo "$GITHUB_REPOSITORY" --notes-file "$scratch/notes.md"
   echo "Updated ${tag} release notes from its tagged commit."
+  bash "$repo_root/ci/latest" "$target_commit"
   exit 0
 fi
 (cd dist && sha256sum --check SHA256SUMS.txt)
@@ -56,5 +57,8 @@ gh release create "$tag" "${create_options[@]}" \
   --repo "$GITHUB_REPOSITORY" \
   --target "$target_commit" \
   --title "WinCacheCleaner ${tag}" \
+  --latest=false \
   --notes-file "$scratch/notes.md" \
   dist/WinCacheCleaner.cmd dist/WinCacheCleaner.ps1 dist/SHA256SUMS.txt "dist/WinCacheCleaner-${tag}.zip"
+
+bash "$repo_root/ci/latest" "$target_commit"

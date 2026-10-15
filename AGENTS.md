@@ -3,9 +3,17 @@
 ## Repository and branches
 
 Use the existing checkout. Cloud tasks are isolated; do not create Git worktrees
-unless the user explicitly requests one. Make changes on `develop`. For an authorized release, promote in this order:
+unless the user explicitly requests one. Every feature, fix, documentation or CI
+change must start on a separate branch based on `develop` and enter `develop`
+through a pull request. Never push change commits directly to `develop` or `main`.
+Open feature PRs with `develop` as the base; use an English Conventional Commit
+title and describe behavior and validation. For an authorized release, promote
+in this order:
 `develop -> release-<VERSION> -> main -> develop`. Use a Conventional Commit
-message for the release merge into `main`, then sync `develop` from `main`. Never build or publish releases automatically from `develop`.
+message for the release merge into `main`, then sync `develop` from `main`.
+Actions may start only for pushes to `main` and `develop`: no release-branch,
+pull request or workflow_dispatch triggers. Never build or publish releases
+automatically from `develop`.
 Preserve unrelated user changes. Do not rewrite published history without an
 explicit user request; use exact `--force-with-lease` expectations when authorized.
 
@@ -92,7 +100,10 @@ Keep full Git history and tags for release notes. Never move versioned release t
 later branch changes. A successful local build or push does not prove Actions or publication
 completed.
 
-## Requested follow-up
+## Latest tag
 
-For version 0.4.1, add support for the `latest` tag. This is a separate task and
-is not implemented in 0.4.0.
+After successful main publication, promote the movable `latest` alias to the
+version tag's exact commit and mark that GitHub release Latest. Use an exact
+remote-object lease; never force blindly. An older rerun must not roll latest
+backwards. Keep versioned tags and assets immutable. Test against local bare Git
+repositories and a mocked GitHub CLI; never mutate real release metadata in tests.
