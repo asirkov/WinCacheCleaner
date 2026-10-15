@@ -25,7 +25,7 @@ CMD
 } | sed 's/$/\r/' > "$output_directory/WinCacheCleaner.cmd"
 bash "$repo_root/ci/git-notes" > "$output_directory/RELEASE_NOTES.md"
 files+=(WinCacheCleaner.cmd RELEASE_NOTES.md)
-(cd -- "$output_directory" && sha256sum "${files[@]}" > SHA256SUMS.txt)
+(cd -- "$output_directory" && sha256sum --binary "${files[@]}" > SHA256SUMS.txt)
 # PowerShell provides ZIP creation on both Linux and Windows Git Bash runners.
 export WCC_DIST WCC_ARCHIVE
 WCC_DIST=$(native_path "$output_directory")

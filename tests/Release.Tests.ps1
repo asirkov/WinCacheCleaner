@@ -14,7 +14,7 @@ $version = (Get-Content (Join-Path $repoRoot 'VERSION') -Raw).Trim()
 $actual = & ([scriptblock]::Create($source)) -Version
 if ($actual -cne $version) { throw 'Embedded script reports the wrong version' }
 foreach ($line in Get-Content (Join-Path $OutputDirectory 'SHA256SUMS.txt')) {
-    if ($line -notmatch '^([a-f0-9]{64})  (.+)$') { throw 'Invalid checksum line' }
+    if ($line -notmatch '^([a-f0-9]{64}) [ *](.+)$') { throw 'Invalid checksum line' }
     $expected = $Matches[1]
     $file = $Matches[2]
     if ((Get-FileHash -LiteralPath (Join-Path $OutputDirectory $file) -Algorithm SHA256).Hash.ToLowerInvariant() -cne $expected) { throw "Checksum mismatch: $file" }
