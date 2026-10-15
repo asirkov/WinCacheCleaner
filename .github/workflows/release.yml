@@ -30,21 +30,14 @@ jobs:
             shell: powershell
     steps:
       - uses: actions/checkout@v4
-      - name: Check syntax and version
-        shell: ${{ matrix.shell }}
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $tokens = $null
-          $errors = $null
-          [void][System.Management.Automation.Language.Parser]::ParseFile((Join-Path $PWD 'WinCacheCleaner.ps1'), [ref]$tokens, [ref]$errors)
-          if ($errors.Count) { throw ($errors | Out-String) }
-          $version = (Get-Content VERSION -Raw).Trim()
-          if ($version -notmatch '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$') { throw 'VERSION must be MAJOR.MINOR.PATCH' }
-          $actual = & ./WinCacheCleaner.ps1 -Version
-          if ($actual -cne $version) { throw 'Script version differs from VERSION' }
-      - name: Run isolated safety tests
-        shell: ${{ matrix.shell }}
-        run: ./tests/Safety.Tests.ps1
+      - name: Validate with PowerShell 7
+        if: matrix.shell == 'pwsh'
+        shell: pwsh
+        run: ./.github/scripts/Validate.ps1
+      - name: Validate with Windows PowerShell 5.1
+        if: matrix.shell == 'powershell'
+        shell: powershell
+        run: ./.github/scripts/Validate.ps1
 
   release:
     name: Publish versioned release
