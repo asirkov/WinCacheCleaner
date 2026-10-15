@@ -68,7 +68,7 @@ registry/AppX, Windows file-locking or interactive terminal compatibility.
 
 ## Versions and branches
 
-Current version: **0.3.3**. Display it with:
+Current version: **0.4.0**. Display it with:
 
 ```powershell
 powershell.exe -NoProfile -File .\WinCacheCleaner.ps1 -Version
