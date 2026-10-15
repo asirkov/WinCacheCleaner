@@ -74,7 +74,9 @@ Current version: **0.3.3**. Display it with:
 powershell.exe -NoProfile -File .\WinCacheCleaner.ps1 -Version
 ```
 
-Use `develop` for subsequent changes and merge reviewed changes into `main`.
+Use `develop` for subsequent changes. Promote releases in this order:
+`develop -> release-<VERSION> -> main -> develop`. Release branches run validation;
+packaging and publication run only on `main`.
 Before a new release, increment `VERSION` and `$script:AppVersion` in the script
 using MAJOR.MINOR.PATCH. Keep the header version aligned. Write clear commit
 subjects: release notes are generated from Git commits after the previous
@@ -88,6 +90,7 @@ PowerShell 7, Windows PowerShell 7 and Windows PowerShell 5.1. After successful
 checks on `main`, it automatically creates `v<VERSION>` on the exact tested commit
 and publishes the standalone CMD, script, SHA256 checksums and a ZIP with documentation/license.
 Existing release tags and assets are preserved; bump the version for another release.
+An existing tag without a release is published using source/docs from that exact tag.
 For an existing release, Actions refreshes only its notes from the tagged commit,
 using English headings and link labels.
 `develop` and pull requests run source validation only, without building release packages or publishing. The workflow can
@@ -143,3 +146,5 @@ The per-target limit defaults to 120 seconds; for a slow disk, use
 Scanning reads metadata, not file contents. The timer/Esc check runs between
 filesystem operations; it cannot interrupt a single blocked OS call. Ctrl+C
 stops the scan, before any cleanup confirmation.
+
+Planned for 0.4.1: support a `latest` tag. This is separate from the 0.4.0 release.

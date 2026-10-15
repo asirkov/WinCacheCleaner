@@ -1,3 +1,4 @@
 ci/* text eol=lf
 tests/GitNotes.Tests text eol=lf
 .github/workflows/*.yml text eol=lf
+tests/Publish.Tests text eol=lf
