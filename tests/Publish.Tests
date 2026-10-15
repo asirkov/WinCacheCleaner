@@ -5,7 +5,7 @@ project_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 fixture=$(mktemp -d)
 trap 'rm -rf -- "$fixture"' EXIT
 mkdir -p "$fixture/ci" "$fixture/bin" "$fixture/dist"
-cp "$project_root/ci/common" "$project_root/ci/release" "$project_root/ci/git-notes" "$project_root/ci/build" "$fixture/ci/"
+cp "$project_root/ci/common" "$project_root/ci/release" "$project_root/ci/git-notes" "$project_root/ci/build" "$project_root/ci/latest" "$fixture/ci/"
 cd -- "$fixture"
 git init -q
 git config user.name 'Publish test'
@@ -41,11 +41,24 @@ printf '%s\n' "$*" >> "$TEST_CALLS"
 if [[ $1 == api ]]; then
   case $TEST_RELEASE_STATE in
     present) exit 0 ;;
-    missing) echo 'gh: Not Found (HTTP 404)' >&2; exit 1 ;;
+    missing|failed-create) echo 'gh: Not Found (HTTP 404)' >&2; exit 1 ;;
     denied) echo 'gh: Resource not accessible (HTTP 403)' >&2; exit 1 ;;
   esac
 fi
 if [[ $1 == release && ($2 == edit || $2 == create) ]]; then
+  if [[ $2 == create ]]; then
+    if [[ $TEST_RELEASE_STATE == failed-create ]]; then echo 'Upload failed' >&2; exit 1; fi
+    tag=$3
+    target=''
+    previous=''
+    for argument in "$@"; do
+      if [[ $previous == --target ]]; then target=$argument; fi
+      previous=$argument
+    done
+    if ! git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null; then
+      git push -q origin "$target:refs/tags/$tag"
+    fi
+  fi
   while (( $# > 0 )); do
     if [[ $1 == --notes-file ]]; then cp "$2" "$TEST_NOTES"; break; fi
     shift
@@ -64,6 +77,8 @@ bash ci/release > "$fixture/output"
 grep -q 'release create v0.3.3 --verify-tag' "$TEST_CALLS"
 grep -q -- "--target $released_commit" "$TEST_CALLS"
 ! grep -q 'later documentation' "$TEST_NOTES"
+[[ $(git ls-remote origin refs/tags/latest | cut -f1) == "$released_commit" ]]
+grep -q 'release edit v0.3.3 .*--latest' "$TEST_CALLS"
 : > "$TEST_CALLS"
 export TEST_RELEASE_STATE=present
 bash ci/release > "$fixture/output"
@@ -80,17 +95,34 @@ printf 'wrong source\n' >> dist/WinCacheCleaner.ps1
 (cd dist && sha256sum --binary VERSION WinCacheCleaner.ps1 README.md LICENSE WinCacheCleaner.cmd > SHA256SUMS.txt)
 if bash ci/release > "$fixture/output" 2>&1; then echo 'Mismatched asset was published' >&2; exit 1; fi
 ! grep -q 'release create' "$TEST_CALLS"
+# A failed release creation must not advance latest.
+: > "$TEST_CALLS"
+export TEST_RELEASE_STATE=failed-create
+for file in VERSION WinCacheCleaner.ps1 README.md LICENSE; do git show "v0.3.3:$file" > "dist/$file"; done
+(cd dist && sha256sum --binary VERSION WinCacheCleaner.ps1 README.md LICENSE WinCacheCleaner.cmd > SHA256SUMS.txt)
+if bash ci/release > "$fixture/output" 2>&1; then echo 'Failed creation was ignored' >&2; exit 1; fi
+[[ $(git ls-remote origin refs/tags/latest | cut -f1) == "$released_commit" ]]
+! grep -q -- '--latest$' "$TEST_CALLS"
+export TEST_RELEASE_STATE=missing
 # New tag/release creation still targets the tested branch commit.
 git push -q origin :refs/tags/v0.3.3
 git tag -d v0.3.3 >/dev/null
-for file in VERSION WinCacheCleaner.ps1 README.md LICENSE; do cp "$file" dist/; done
-(cd dist && sha256sum --binary VERSION WinCacheCleaner.ps1 README.md LICENSE WinCacheCleaner.cmd > SHA256SUMS.txt)
+# Simulate Windows checkout CRLF while the Git objects retain LF.
+for file in VERSION WinCacheCleaner.ps1 README.md LICENSE; do
+  git show "${GITHUB_SHA}:${file}" | sed 's/$/\r/' > "$file"
+done
+GITHUB_ACTIONS=true bash ci/build > "$fixture/build-output"
+for file in VERSION WinCacheCleaner.ps1 README.md LICENSE; do
+  git show "${GITHUB_SHA}:${file}" | cmp - "dist/$file"
+done
 : > "$TEST_CALLS"
 bash ci/release > "$fixture/output"
 grep -q 'release create v0.3.3' "$TEST_CALLS"
 ! grep -q -- '--verify-tag' "$TEST_CALLS"
 grep -q -- "--target $GITHUB_SHA" "$TEST_CALLS"
+grep -q -- '--latest=false' "$TEST_CALLS"
+[[ $(git ls-remote origin refs/tags/latest | cut -f1) == "$GITHUB_SHA" ]]
 : > "$TEST_CALLS"
 if GITHUB_REF=refs/heads/develop bash ci/release > "$fixture/output" 2>&1; then echo 'Develop was published' >&2; exit 1; fi
 [[ ! -s $TEST_CALLS ]]
-printf 'PASS: exact-tag packaging, tag-only recovery, existing release, new release, API denial, asset identity, develop guard\n'
+printf 'PASS: CRLF checkout packaging, exact-tag packaging, tag-only recovery, existing release, new release, API denial, asset identity, develop guard\n'

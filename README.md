@@ -68,15 +68,16 @@ registry/AppX, Windows file-locking or interactive terminal compatibility.
 
 ## Versions and branches
 
-Current version: **0.4.0**. Display it with:
+Current version: **0.4.1**. Display it with:
 
 ```powershell
 powershell.exe -NoProfile -File .\WinCacheCleaner.ps1 -Version
 ```
 
 Use `develop` for subsequent changes. Promote releases in this order:
-`develop -> release-<VERSION> -> main -> develop`. Release branches run validation;
-packaging and publication run only on `main`.
+`develop -> release-<VERSION> -> main -> develop`. Actions starts only for pushes
+to `main` and `develop`; release branches do not start Actions. Packaging and
+publication run only on `main`.
 Before a new release, increment `VERSION` and `$script:AppVersion` in the script
 using MAJOR.MINOR.PATCH. Keep the header version aligned. Write clear commit
 subjects: release notes are generated from Git commits after the previous
@@ -93,8 +94,9 @@ Existing release tags and assets are preserved; bump the version for another rel
 An existing tag without a release is published using source/docs from that exact tag.
 For an existing release, Actions refreshes only its notes from the tagged commit,
 using English headings and link labels.
-`develop` and pull requests run source validation only, without building release packages or publishing. The workflow can
-also be rerun manually from `main`. GitHub Actions must be enabled with permission
+`develop` runs source validation only, without building release packages or publishing.
+There are no pull request or workflow_dispatch triggers. Existing runs on the
+allowed branches may be rerun in Actions. GitHub Actions must be enabled with permission
 for the release job to write repository contents.
 
 ## Standalone Windows download
@@ -126,7 +128,8 @@ and create ZIP files; no separate PowerShell CI helper scripts are required.
 `ci/git-notes` prints generated notes. `ci/release` publishes only in a main-branch
 GitHub Actions context. Actions uses `fetch-depth: 0` for notes generation.
 
-The main-branch packaging job builds on Windows and tests the actual CMD launch
+CI packages use exact Git blob bytes so Windows CRLF conversion cannot change
+release assets or their checksums. The main-branch packaging job builds on Windows and tests the actual CMD launch
 with `-Version`, including a path containing spaces, before release publication.
 
 ## Contribution rules
@@ -137,7 +140,7 @@ for example `fix(browser): preserve profile settings` or `ci: validate release p
 Run `./ci/check-commits` before pushing. It installs pinned development-only
 commitlint tools with `npm ci` (Node.js 20+) and checks commits after the documented
 adoption baseline, including explicit merges. Existing released history is retained.
-CI checks PR branch commits instead of GitHub's synthetic merge commit.
+CI checks all new commits on the pushed `main` or `develop` branch.
 
 GPU/game scans show file counts, logical bytes and elapsed time. Press Esc to
 skip the current GPU/game target; skipped targets are excluded from cleanup.
@@ -147,4 +150,15 @@ Scanning reads metadata, not file contents. The timer/Esc check runs between
 filesystem operations; it cannot interrupt a single blocked OS call. Ctrl+C
 stops the scan, before any cleanup confirmation.
 
-Planned for 0.4.1: support a `latest` tag. This is separate from the 0.4.0 release.
+## Latest release
+
+After a successful main-branch publication, the movable Git tag `latest` points
+to the exact commit of `v<VERSION>`, and that GitHub release is marked Latest.
+Version tags and existing assets stay immutable. Older-release reruns cannot
+move the alias backwards; concurrent tag changes are protected by an exact
+`--force-with-lease`. Failed publication does not promote the alias.
+If the GitHub marker update fails after the tag push, rerunning repairs it.
+
+Download the standalone launcher from the latest GitHub release:
+[WinCacheCleaner.cmd](https://github.com/asirkov/WinCacheCleaner/releases/latest/download/WinCacheCleaner.cmd).
+`latest` is a Git alias, not a separate release with duplicate assets.

@@ -1,0 +1,86 @@
+#!/usr/bin/env bash
+# Real tag operations use a disposable local bare repository; GitHub is mocked.
+set -euo pipefail
+project_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+fixture=$(mktemp -d)
+trap 'rm -rf -- "$fixture"' EXIT
+mkdir -p "$fixture/ci" "$fixture/bin"
+cp "$project_root/ci/common" "$project_root/ci/latest" "$fixture/ci/"
+cd -- "$fixture"
+git init -q
+git config user.name 'Latest test'
+git config user.email 'latest-test@example.invalid'
+printf '0.4.0\n' > VERSION
+git add VERSION
+git commit -qm 'chore: create older release'
+older_commit=$(git rev-parse HEAD)
+git tag v0.4.0
+printf '0.4.1\n' > VERSION
+git add VERSION
+git commit -qm 'feat: create latest release'
+target_commit=$(git rev-parse HEAD)
+git tag v0.4.1
+git init --bare -q "$fixture/remote.git"
+git remote add origin "$fixture/remote.git"
+git push -q origin HEAD:main refs/tags/v0.4.0 refs/tags/v0.4.1
+cat > bin/gh <<'MOCK'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$*" >> "$TEST_CALLS"
+[[ $1 == release && $2 == edit && $3 == v0.4.1 && "$*" == *'--latest'* ]]
+if [[ ${TEST_MARK_DENIED:-false} == true ]]; then echo 'gh: Forbidden (HTTP 403)' >&2; exit 1; fi
+MOCK
+chmod +x bin/gh
+export PATH="$fixture/bin:$PATH" TEST_CALLS="$fixture/calls"
+export GITHUB_REF=refs/heads/main GITHUB_EVENT_NAME=push GITHUB_REPOSITORY=fixture/repo
+bash ci/latest "$target_commit" > "$fixture/output" 2>&1
+[[ $(git ls-remote origin refs/tags/latest | cut -f1) == "$target_commit" ]]
+grep -q 'release edit v0.4.1 .*--latest' "$TEST_CALLS"
+# An annotated alias is resolved to a commit, while its object SHA is used for the lease.
+git push -q origin :refs/tags/latest
+git tag -a latest "$older_commit" -m 'Previous latest'
+git push -q origin refs/tags/latest
+bash ci/latest "$target_commit" > "$fixture/output" 2>&1
+[[ $(git ls-remote origin refs/tags/latest | cut -f1) == "$target_commit" ]]
+# A failed marker update is repairable without moving an already correct alias.
+export TEST_MARK_DENIED=true
+if bash ci/latest "$target_commit" > "$fixture/output" 2>&1; then echo 'Marker denial was ignored' >&2; exit 1; fi
+[[ $(git ls-remote origin refs/tags/latest | cut -f1) == "$target_commit" ]]
+export TEST_MARK_DENIED=false
+bash ci/latest "$target_commit" > "$fixture/output" 2>&1
+# Rerunning an older release cannot roll back a newer alias or GitHub marker.
+printf '0.4.2\n' > VERSION
+git add VERSION
+git commit -qm 'fix: create newer release'
+newer_commit=$(git rev-parse HEAD)
+git tag v0.4.2
+git push -q origin refs/tags/v0.4.2
+git push -q --force origin "$newer_commit:refs/tags/latest"
+git switch -q --detach v0.4.1
+: > "$TEST_CALLS"
+bash ci/latest "$target_commit" > "$fixture/output" 2>&1
+[[ $(git ls-remote origin refs/tags/latest | cut -f1) == "$newer_commit" ]]
+[[ ! -s $TEST_CALLS ]]
+# A concurrent update between observation and push must fail its exact lease.
+git push -q --force origin "$older_commit:refs/tags/latest"
+export REAL_GIT TEST_BARE_REMOTE="$fixture/remote.git" TEST_RACE_COMMIT="$newer_commit"
+REAL_GIT=$(command -v git)
+cat > bin/git <<'MOCK'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ $1 == push && "$*" == *'--force-with-lease=refs/tags/latest:'* ]]; then
+  "$REAL_GIT" --git-dir="$TEST_BARE_REMOTE" update-ref refs/tags/latest "$TEST_RACE_COMMIT"
+fi
+exec "$REAL_GIT" "$@"
+MOCK
+chmod +x bin/git
+: > "$TEST_CALLS"
+if bash ci/latest "$target_commit" > "$fixture/output" 2>&1; then echo 'Concurrent latest update was overwritten' >&2; exit 1; fi
+[[ $(git ls-remote origin refs/tags/latest | cut -f1) == "$newer_commit" ]]
+[[ ! -s $TEST_CALLS ]]
+rm bin/git
+# The alias requires the exact published version commit and a main push.
+if bash ci/latest "$older_commit" > "$fixture/output" 2>&1; then echo 'Wrong version commit accepted' >&2; exit 1; fi
+if GITHUB_REF=refs/heads/develop bash ci/latest "$target_commit" > "$fixture/output" 2>&1; then echo 'Develop promotion accepted' >&2; exit 1; fi
+[[ ! -s $TEST_CALLS ]]
+printf 'PASS: latest creation, annotated alias, idempotent repair, no rollback, concurrent lease, exact version, main guard\n'
